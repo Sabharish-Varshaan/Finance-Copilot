@@ -2,6 +2,9 @@
   "name": "finance-copilot-frontend",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20 <21"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -22,6 +25,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@types/estree": "^1.0.8",
     "@types/js-cookie": "^3.0.6",
     "@types/node": "^20.17.30",
     "@types/react": "^18.3.20",

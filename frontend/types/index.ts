@@ -11,6 +11,7 @@ export interface FinancialProfilePayload {
   income: number;
   expenses: number;
   savings: number;
+  insurance_coverage: number;
   loans: number;
   emi: number;
   risk_profile: RiskProfile;

@@ -1,6 +1,8 @@
 from collections.abc import Sequence
 from typing import Any
 
+from app.services.ai.retriever import retrieve_relevant_docs
+
 
 def _format_currency(value: float) -> str:
     return f"₹{value:,.0f}"
@@ -120,16 +122,48 @@ def _financial_analysis_block(financial_analysis: dict[str, Any] | None) -> str:
     )
 
 
+def _fire_plan_summary(fire_plan: dict[str, Any] | None) -> str:
+    if not fire_plan:
+        return ""
+
+    fire_target = float(fire_plan.get("fire_target", 0.0))
+    monthly_sip_fire = float(fire_plan.get("monthly_sip_fire", 0.0))
+    years_to_retire = int(fire_plan.get("years_to_retire", 0))
+
+    goal_entries: list[str] = []
+    for goal in fire_plan.get("goal_plan", []):
+        if not isinstance(goal, dict):
+            continue
+        name = str(goal.get("name", "Goal"))
+        monthly_sip = float(goal.get("monthly_sip", 0.0))
+        goal_entries.append(f"{name} {_format_currency(monthly_sip)} SIP")
+
+    goals_text = ", ".join(goal_entries) if goal_entries else "No active goal SIPs"
+    return (
+        f"FIRE target: {_format_currency(fire_target)}\n"
+        f"Years to retire: {years_to_retire}\n"
+        f"SIP: {_format_currency(monthly_sip_fire)}/month\n"
+        f"Goals: {goals_text}"
+    )
+
+
 def build_messages(
     user_profile: Any,
     goals: Sequence[Any],
     user_query: str,
     chat_history: Sequence[Any],
     financial_analysis: dict[str, Any] | None = None,
+    fire_plan: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     metrics_section = _metrics_section(financial_analysis)
     flags_section = _flags_section(financial_analysis)
     priority_section = _primary_priority(financial_analysis.get("flags", {}) if financial_analysis else {})
+    retrieved_docs = retrieve_relevant_docs(user_query, k=3)
+    knowledge_block = "\n".join([f"- {doc['content']}" for doc in retrieved_docs])
+    if not knowledge_block:
+        knowledge_block = "- No additional finance knowledge retrieved for this query."
+    fire_plan_summary = _fire_plan_summary(fire_plan)
+    fire_plan_block = f"FIRE PLAN:\n{fire_plan_summary}\n\n" if fire_plan_summary else ""
 
     system_prompt = (
         "You are an AI personal finance advisor for Indian users.\n\n"
@@ -140,6 +174,9 @@ def build_messages(
         f"{flags_section}\n\n"
         "Primary Priority:\n"
         f"- {priority_section}\n\n"
+        f"{fire_plan_block}"
+        "RELEVANT FINANCIAL KNOWLEDGE:\n"
+        f"{knowledge_block}\n\n"
         "INSTRUCTIONS:\n"
         "1. Follow system decisions exactly and never contradict flags.\n"
         "2. Do not suggest actions that conflict with system decisions.\n"
@@ -167,6 +204,21 @@ def build_messages(
         "- 'this will slow your wealth growth'\n"
         "- 'this will limit your investment capacity'\n"
         "Avoid vague phrases like 'be careful' or 'proceed cautiously'.\n\n"
+        "18. Always validate user statements against system financial metrics.\n"
+        "19. If a user assumption conflicts with system metrics (e.g., claims high debt when debt is low):\n"
+        "- Start with: 'Based on your financial data...' and then state the correct metric reality\n"
+        "- Base the answer ONLY on system metrics\n"
+        "- Do NOT reinforce incorrect assumptions\n"
+        "20. When a user assumption is incorrect:\n"
+        "- Correct first, then provide the right guidance\n"
+        "- Keep the correction clear, respectful, and direct\n"
+        "21. System financial metrics are the single source of truth. User-provided assumptions must not override them.\n"
+        "22. If a financial action is risky or suboptimal:\n"
+        "- Use strong language: 'You should NOT do this' or 'This is not advisable'\n"
+        "- Avoid weak phrasing like 'you can if needed' or 'proceed with caution'\n"
+        "23. When multiple valid financial standards exist, use ranges instead of fixed numbers (example: maintain 6-12 months of emergency fund depending on income stability).\n"
+        "24. For high-risk scenarios (especially taking loans to invest), always give a strong NO and clearly explain the downside risk.\n"
+        "25. Use natural, conversational advisor language. Avoid robotic phrasing while staying concise and decisive.\n\n"
         "RESPONSE STYLE:\n"
         "- Start with a clear, strong decision\n"
         "- Explain concrete financial consequences (not warnings or cautions)\n"

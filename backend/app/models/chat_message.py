@@ -15,4 +15,4 @@ class ChatMessage(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", back_populates="messages")
+    user: Mapped["User"] = relationship("User", back_populates="messages")

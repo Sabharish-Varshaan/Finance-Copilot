@@ -17,6 +17,13 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    financial_profile = relationship("FinancialProfile", back_populates="user", uselist=False)
-    goals = relationship("Goal", back_populates="user", cascade="all, delete-orphan")
-    messages = relationship("ChatMessage", back_populates="user", cascade="all, delete-orphan")
+    financial_profile: Mapped["FinancialProfile | None"] = relationship(
+        "FinancialProfile", back_populates="user", uselist=False
+    )
+    goals: Mapped[list["Goal"]] = relationship("Goal", back_populates="user", cascade="all, delete-orphan")
+    messages: Mapped[list["ChatMessage"]] = relationship(
+        "ChatMessage", back_populates="user", cascade="all, delete-orphan"
+    )
+    fire_plans: Mapped[list["FirePlan"]] = relationship(
+        "FirePlan", back_populates="user", cascade="all, delete-orphan"
+    )

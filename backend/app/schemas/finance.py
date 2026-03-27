@@ -12,6 +12,7 @@ class FinancialProfileUpsert(BaseModel):
     income: float = Field(ge=0)
     expenses: float = Field(ge=0)
     savings: float = Field(ge=0)
+    insurance_coverage: float = Field(default=0, ge=0)
     loans: float = Field(ge=0)
     emi: float = Field(ge=0)
     risk_profile: RiskProfile

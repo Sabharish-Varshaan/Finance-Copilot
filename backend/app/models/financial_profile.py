@@ -16,6 +16,7 @@ class FinancialProfile(Base):
     income: Mapped[float] = mapped_column(Float, nullable=False)
     expenses: Mapped[float] = mapped_column(Float, nullable=False)
     savings: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    insurance_coverage: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     loans: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     emi: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     risk_profile: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -26,4 +27,4 @@ class FinancialProfile(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    user = relationship("User", back_populates="financial_profile")
+    user: Mapped["User"] = relationship("User", back_populates="financial_profile")

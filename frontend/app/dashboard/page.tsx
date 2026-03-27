@@ -11,7 +11,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
-import { listGoals } from "@/services/goalService";
+import {
+  createGoal,
+  deleteGoal,
+  listGoals,
+  type GoalCreatePayload,
+  type GoalStatusFilter,
+  type GoalUpdatePayload,
+  updateGoal,
+} from "@/services/goalService";
 import { getNudges, getScore } from "@/services/scoreService";
 import type { Goal, MoneyHealthScore } from "@/types";
 
@@ -22,12 +30,28 @@ export default function DashboardPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [nudges, setNudges] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [goalsLoading, setGoalsLoading] = useState(false);
+  const [selectedGoalStatus, setSelectedGoalStatus] = useState<GoalStatusFilter>("active");
+
+  async function loadGoalsByStatus(status: GoalStatusFilter) {
+    setGoalsLoading(true);
+    try {
+      const goalsData = await listGoals(status);
+      setGoals(goalsData);
+    } finally {
+      setGoalsLoading(false);
+    }
+  }
 
   useEffect(() => {
     async function loadData() {
       try {
         setLoading(true);
-        const [scoreData, goalsData, nudgesData] = await Promise.all([getScore(), listGoals(), getNudges()]);
+        const [scoreData, goalsData, nudgesData] = await Promise.all([
+          getScore(),
+          listGoals(selectedGoalStatus),
+          getNudges(),
+        ]);
         setScore(scoreData);
         setGoals(goalsData);
         setNudges(nudgesData.nudges);
@@ -40,6 +64,38 @@ export default function DashboardPage() {
 
     loadData();
   }, []);
+
+  async function handleGoalStatusChange(status: GoalStatusFilter) {
+    setSelectedGoalStatus(status);
+    await loadGoalsByStatus(status);
+  }
+
+  async function handleCreateGoal(payload: GoalCreatePayload) {
+    await createGoal(payload);
+    await loadGoalsByStatus(selectedGoalStatus);
+  }
+
+  async function handleUpdateGoal(goalId: number, payload: GoalUpdatePayload) {
+    try {
+      await updateGoal(goalId, payload);
+      await loadGoalsByStatus(selectedGoalStatus);
+      toast.success("Goal updated");
+    } catch {
+      toast.error("Could not update goal");
+      throw new Error("goal-update-failed");
+    }
+  }
+
+  async function handleDeleteGoal(goalId: number) {
+    try {
+      await deleteGoal(goalId);
+      await loadGoalsByStatus(selectedGoalStatus);
+      toast.success("Goal deleted");
+    } catch {
+      toast.error("Could not delete goal");
+      throw new Error("goal-delete-failed");
+    }
+  }
 
   if (loading) {
     return (
@@ -63,6 +119,9 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2">
           <Link href="/onboarding">
             <Button className="border border-white/10 bg-panelAlt text-text shadow-none">Update Profile</Button>
+          </Link>
+          <Link href="/fire-planner">
+            <Button className="border border-white/10 bg-panelAlt text-text shadow-none">FIRE Planner</Button>
           </Link>
           <Link href="/chat">
             <Button>Open Mentor Chat</Button>
@@ -93,7 +152,15 @@ export default function DashboardPage() {
           </div>
           <NudgeList nudges={nudges} />
           <div className="lg:col-span-3">
-            <GoalList goals={goals} />
+            <GoalList
+              goals={goals}
+              selectedStatus={selectedGoalStatus}
+              isLoading={goalsLoading}
+              onStatusChange={handleGoalStatusChange}
+              onCreateGoal={handleCreateGoal}
+              onUpdateGoal={handleUpdateGoal}
+              onDeleteGoal={handleDeleteGoal}
+            />
           </div>
         </div>
       )}

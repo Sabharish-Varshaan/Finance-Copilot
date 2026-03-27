@@ -14,6 +14,7 @@ class GoalCreate(BaseModel):
     current_amount: float = Field(default=0, ge=0)
     target_date: date
     expected_annual_return: float = Field(default=0.12, ge=0, le=0.3)
+    smart_adjust: bool = False
 
 
 class GoalUpdate(BaseModel):
@@ -22,6 +23,7 @@ class GoalUpdate(BaseModel):
     current_amount: float | None = Field(default=None, ge=0)
     target_date: date | None = None
     expected_annual_return: float | None = Field(default=None, ge=0, le=0.3)
+    monthly_sip_required: float | None = Field(default=None, ge=0)
     status: Literal["active", "completed", "paused"] | None = None
 
 

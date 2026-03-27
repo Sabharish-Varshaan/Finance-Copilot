@@ -1,5 +1,7 @@
 import asyncio
 import logging
+from datetime import date
+from math import ceil
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -10,6 +12,7 @@ from app.schemas.chat import ChatRequest
 from app.services.ai.llm_service import generate_response
 from app.services.ai.prompt_builder import build_messages
 from app.services.finance_service import get_financial_profile
+from app.services.fire.fire_planner import generate_fire_plan
 from app.services.finance_rules.engine import run_all_rules
 from app.services.goal_service import list_goals
 
@@ -82,6 +85,58 @@ def _is_greeting_or_smalltalk(query: str) -> bool:
     return short_greeting and not any(term in text for term in finance_terms)
 
 
+def _is_fire_related_query(query: str) -> bool:
+    text = (query or "").strip().lower()
+    if not text:
+        return False
+
+    fire_terms = {
+        "fire",
+        "retire",
+        "retirement",
+        "financial independence",
+        "goal",
+        "house",
+        "car",
+        "travel",
+        "sip",
+    }
+    return any(term in text for term in fire_terms)
+
+
+def _years_from_target_date(target_date: date) -> int:
+    days_remaining = (target_date - date.today()).days
+    if days_remaining <= 0:
+        return 0
+    return max(ceil(days_remaining / 365), 1)
+
+
+def _profile_for_fire(profile: object) -> dict[str, float | int | str]:
+    return {
+        "age": int(getattr(profile, "age", 0) or 0),
+        "monthly_income": float(getattr(profile, "income", 0.0) or 0.0),
+        "monthly_expenses": float(getattr(profile, "expenses", 0.0) or 0.0),
+        "current_savings": float(getattr(profile, "savings", 0.0) or 0.0),
+        "monthly_emi": float(getattr(profile, "emi", 0.0) or 0.0),
+        "risk_profile": str(getattr(profile, "risk_profile", "moderate") or "moderate"),
+    }
+
+
+def _goals_for_fire(goals: list[object]) -> list[dict[str, float | int | str]]:
+    mapped_goals: list[dict[str, float | int | str]] = []
+    for goal in goals:
+        target_date = getattr(goal, "target_date", None)
+        years = _years_from_target_date(target_date) if isinstance(target_date, date) else 0
+        mapped_goals.append(
+            {
+                "name": str(getattr(goal, "title", "Goal") or "Goal"),
+                "amount": float(getattr(goal, "target_amount", 0.0) or 0.0),
+                "years": years,
+            }
+        )
+    return mapped_goals
+
+
 def _recent_chat_history(db: Session, user: User, limit: int = 5) -> list[ChatMessage]:
     return (
         db.query(ChatMessage)
@@ -126,7 +181,7 @@ def chat_with_mentor(db: Session, user: User, payload: ChatRequest) -> str:
         _save_chat_turn(db, user, payload.query, assistant_response)
         return assistant_response
 
-    goals = list_goals(db, user)
+    goals = list_goals(db, user, status="active")
     history = _recent_chat_history(db, user, limit=5)
 
     financial_analysis = None
@@ -135,12 +190,20 @@ def chat_with_mentor(db: Session, user: User, payload: ChatRequest) -> str:
     except Exception:
         logger.exception("Finance rules evaluation failed; continuing without system analysis")
 
+    fire_plan = None
+    if _is_fire_related_query(payload.query):
+        try:
+            fire_plan = generate_fire_plan(_profile_for_fire(profile), _goals_for_fire(goals))
+        except Exception:
+            logger.exception("FIRE plan generation failed; continuing without FIRE context")
+
     messages = build_messages(
         user_profile=profile,
         goals=goals,
         user_query=payload.query,
         chat_history=history,
         financial_analysis=financial_analysis,
+        fire_plan=fire_plan,
     )
 
     try:

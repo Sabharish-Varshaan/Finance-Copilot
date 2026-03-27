@@ -16,6 +16,7 @@ type FormState = {
   income: number;
   expenses: number;
   savings: number;
+  insurance_coverage: number;
   loans: number;
   emi: number;
   risk_profile: RiskProfile;
@@ -34,6 +35,7 @@ export default function OnboardingPage() {
     income: 120000,
     expenses: 50000,
     savings: 250000,
+    insurance_coverage: 0,
     loans: 0,
     emi: 0,
     risk_profile: "moderate" as RiskProfile,
@@ -49,6 +51,7 @@ export default function OnboardingPage() {
           income: existingProfile.income,
           expenses: existingProfile.expenses,
           savings: existingProfile.savings,
+          insurance_coverage: existingProfile.insurance_coverage ?? 0,
           loans: existingProfile.loans,
           emi: existingProfile.emi,
           risk_profile: existingProfile.risk_profile,
@@ -90,6 +93,9 @@ export default function OnboardingPage() {
     }
     if (form.savings < 0) {
       errors.savings = "Savings cannot be negative.";
+    }
+    if (form.insurance_coverage < 0) {
+      errors.insurance_coverage = "Insurance coverage cannot be negative.";
     }
     if (form.loans < 0) {
       errors.loans = "Loans cannot be negative.";
@@ -202,6 +208,22 @@ export default function OnboardingPage() {
               required
             />
             {fieldErrors.savings ? <p className="mt-1 text-xs text-danger">{fieldErrors.savings}</p> : null}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-text">Current Insurance Coverage (INR)</label>
+            <Input
+              type="number"
+              min={0}
+              step="1000"
+              value={form.insurance_coverage}
+              onChange={(e) => setNumericField("insurance_coverage", parseNumberInput(e.currentTarget.value))}
+              placeholder="e.g. 1500000"
+              required
+            />
+            {fieldErrors.insurance_coverage ? (
+              <p className="mt-1 text-xs text-danger">{fieldErrors.insurance_coverage}</p>
+            ) : null}
           </div>
 
           <div>

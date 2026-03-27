@@ -127,6 +127,11 @@ Nudges:
   - Confirm backend is running on port 8000.
   - Confirm `NEXT_PUBLIC_API_BASE_URL` in frontend/.env.local is correct.
 
+- Frontend shows `/_next/static/... 404` and `Unable to snapshot resolve dependencies`:
+  - Use Node 20 for frontend (`cd frontend && nvm use` after installing Node 20).
+  - Clean Next cache and restart frontend:
+  - `cd frontend && rm -rf .next && npm install && npm run dev`
+
 - Login unauthorized:
   - Verify email/password.
   - Log in again to refresh stored token.
