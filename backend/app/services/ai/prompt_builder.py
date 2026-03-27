@@ -48,16 +48,31 @@ def _result_map(financial_analysis: dict[str, Any] | None) -> dict[str, dict[str
     }
 
 
-def _financial_analysis_block(financial_analysis: dict[str, Any] | None) -> str:
+def _yes_no(value: Any) -> str:
+    return "YES" if bool(value) else "NO"
+
+
+def _primary_priority(flags: dict[str, Any]) -> str:
+    if bool(flags.get("high_debt")):
+        return "Debt repayment and EMI reduction"
+    if bool(flags.get("needs_emergency_fund")):
+        return "Build emergency fund to minimum safety threshold"
+    if bool(flags.get("should_increase_savings")):
+        return "Increase savings rate"
+    if bool(flags.get("should_invest")):
+        return "Start investing with disciplined SIP"
+    return "Maintain current allocation with periodic review"
+
+
+def _metrics_section(financial_analysis: dict[str, Any] | None) -> str:
     if not financial_analysis:
-        return ""
+        return "- Metrics unavailable"
 
     metrics = financial_analysis.get("metrics", {})
     result_by_name = _result_map(financial_analysis)
-
     savings_rate = float(metrics.get("savings_rate", 0.0))
     debt_ratio = float(metrics.get("debt_ratio", 0.0))
-    emergency_months = float(metrics.get("emergency_fund_months", 0.0))
+    emergency_months = float(metrics.get("emergency_months", metrics.get("emergency_fund_months", 0.0)))
 
     savings_status = result_by_name.get("savings_rate", {}).get("status", "unknown")
     debt_status = result_by_name.get("debt_ratio", {}).get("status", "unknown")
@@ -65,13 +80,43 @@ def _financial_analysis_block(financial_analysis: dict[str, Any] | None) -> str:
     investments_status = result_by_name.get("investment_presence", {}).get("status", "unknown")
 
     return (
-        "\n\nFinancial Analysis (System Generated):\n"
         f"- Savings rate: {savings_rate * 100:.1f}% ({savings_status})\n"
         f"- Debt ratio: {debt_ratio * 100:.1f}% ({debt_status})\n"
         f"- Emergency fund: {emergency_months:.1f} months ({emergency_status})\n"
-        f"- Investment presence: {investments_status}\n"
-        "\nSystem insights:\n"
-        + "\n".join(f"- {line}" for line in financial_analysis.get("insights", []))
+        f"- Investment presence: {investments_status}"
+    )
+
+
+def _flags_section(financial_analysis: dict[str, Any] | None) -> str:
+    if not financial_analysis:
+        return "- Decisions unavailable"
+
+    flags = financial_analysis.get("flags", {})
+    return (
+        f"- should_increase_savings: {_yes_no(flags.get('should_increase_savings'))}\n"
+        f"- should_invest: {_yes_no(flags.get('should_invest'))}\n"
+        f"- high_debt: {_yes_no(flags.get('high_debt'))}\n"
+        f"- can_take_loan: {_yes_no(flags.get('can_take_loan'))}\n"
+        f"- needs_emergency_fund: {_yes_no(flags.get('needs_emergency_fund'))}"
+    )
+
+
+def _financial_analysis_block(financial_analysis: dict[str, Any] | None) -> str:
+    if not financial_analysis:
+        return ""
+
+    flags = financial_analysis.get("flags", {})
+    priority = _primary_priority(flags)
+    confidence = str(financial_analysis.get("confidence", "Medium"))
+
+    return (
+        "\n\nFinancial Analysis (SYSTEM - MUST BE FOLLOWED):\n"
+        + f"{_metrics_section(financial_analysis)}\n\n"
+        "System Decisions:\n"
+        + f"{_flags_section(financial_analysis)}\n\n"
+        "Primary Priority:\n"
+        f"- {priority}\n"
+        f"- Confidence: {confidence}"
     )
 
 
@@ -82,14 +127,54 @@ def build_messages(
     chat_history: Sequence[Any],
     financial_analysis: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
+    metrics_section = _metrics_section(financial_analysis)
+    flags_section = _flags_section(financial_analysis)
+    priority_section = _primary_priority(financial_analysis.get("flags", {}) if financial_analysis else {})
+
     system_prompt = (
-        "You are FinMentor, an Indian personal finance advisor. "
-        "Give concise, practical, and personalized advice. "
-        "Always quote amounts in INR (₹), avoid generic statements, and provide clear next actions. "
-        "When relevant, include affordability checks, savings rate impact, and investment trade-offs. "
-        "Use system-generated financial analysis as source-of-truth and anchor your advice to it. "
-        "Do not ignore computed metrics or respond with generic suggestions. "
-        "Format responses in clean markdown: use short headings, bullets, and bold for key numbers or actions."
+        "You are an AI personal finance advisor for Indian users.\n\n"
+        "You are a decision-making advisor, not a chatbot.\n\n"
+        "Financial Analysis (SYSTEM - MUST BE FOLLOWED):\n"
+        f"{metrics_section}\n\n"
+        "System Decisions:\n"
+        f"{flags_section}\n\n"
+        "Primary Priority:\n"
+        f"- {priority_section}\n\n"
+        "INSTRUCTIONS:\n"
+        "1. Follow system decisions exactly and never contradict flags.\n"
+        "2. Do not suggest actions that conflict with system decisions.\n"
+        "3. Avoid repeating the same phrases across responses.\n"
+        "4. Focus only on what is relevant to the user's query.\n"
+        "5. Do not explain all metrics unless necessary.\n"
+        "6. Keep responses concise and non-redundant.\n"
+        "7. Do not use: consider, might, maybe, could.\n"
+        "8. Use direct language: You should / You should NOT.\n"
+        "9. If savings rate is high, do NOT suggest increasing savings.\n"
+        "10. If debt is high, strongly discourage taking new loans.\n"
+        "11. If no investments, prioritize investing only after debt and emergency constraints are handled.\n"
+        "12. If a decision is allowed (YES):\n"
+        "- Clearly state it is allowed\n"
+        "- Explain concrete trade-offs (not soft phrases like 'proceed with caution')\n"
+        "- Recommend the smarter long-term choice\n"
+        "13. If a decision is allowed but not optimal:\n"
+        "- State it is allowed\n"
+        "- But guide the user toward better financial behavior\n"
+        "14. You MUST align your answer with the Primary Priority above.\n"
+        "15. Only reference metrics that are relevant to the user's question.\n"
+        "16. When giving advice, always explain the financial trade-off in practical terms (impact on savings, investments, or financial flexibility).\n"
+        "17. Use strong, professional wording:\n"
+        "- 'this will reduce your financial flexibility'\n"
+        "- 'this will slow your wealth growth'\n"
+        "- 'this will limit your investment capacity'\n"
+        "Avoid vague phrases like 'be careful' or 'proceed cautiously'.\n\n"
+        "RESPONSE STYLE:\n"
+        "- Start with a clear, strong decision\n"
+        "- Explain concrete financial consequences (not warnings or cautions)\n"
+        "- Keep explanation brief and relevant (2–3 lines max)\n"
+        "- Provide 2–3 actionable steps if useful\n"
+        "- Sound like a real financial advisor, not a generic chatbot\n\n"
+        "FINAL INSTRUCTION:\n"
+        "Be deterministic, concise, advisor-grade, and unapologetically clear about trade-offs."
     )
 
     profile_context = (
@@ -103,7 +188,6 @@ def build_messages(
         f"- Has investments: {user_profile.has_investments}\n"
         "Goals:\n"
         f"{_goals_block(goals)}"
-        f"{_financial_analysis_block(financial_analysis)}"
     )
 
     messages: list[dict[str, str]] = [

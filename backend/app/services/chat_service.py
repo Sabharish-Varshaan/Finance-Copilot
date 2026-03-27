@@ -25,6 +25,61 @@ FALLBACK_LLM_MESSAGE = (
     "I could not generate a full analysis right now. "
     "Please try again in a moment."
 )
+GREETING_ONLY_MESSAGE = (
+    "Hi. Ask a specific finance question so I can give a precise decision. "
+    "For example: Should I repay debt first, increase SIP, or build emergency fund?"
+)
+
+
+def _is_greeting_or_smalltalk(query: str) -> bool:
+    text = " ".join((query or "").strip().lower().split())
+    if not text:
+        return True
+
+    exact_greetings = {
+        "hi",
+        "hello",
+        "hey",
+        "yo",
+        "hola",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "how are you",
+        "how r u",
+        "sup",
+        "whats up",
+        "what's up",
+    }
+    if text in exact_greetings:
+        return True
+
+    finance_terms = {
+        "loan",
+        "emi",
+        "debt",
+        "savings",
+        "invest",
+        "sip",
+        "mutual",
+        "fund",
+        "expense",
+        "expenses",
+        "income",
+        "budget",
+        "portfolio",
+        "tax",
+        "insurance",
+        "repay",
+        "credit",
+        "goal",
+    }
+    tokens = set(text.split())
+    short_greeting = len(tokens) <= 3 and bool(
+        tokens.intersection({"hi", "hello", "hey", "yo", "sup", "morning", "evening"})
+    )
+
+    return short_greeting and not any(term in text for term in finance_terms)
 
 
 def _recent_chat_history(db: Session, user: User, limit: int = 5) -> list[ChatMessage]:
@@ -63,6 +118,11 @@ def chat_with_mentor(db: Session, user: User, payload: ChatRequest) -> str:
         if exc.status_code != 404:
             raise
         assistant_response = ONBOARDING_REQUIRED_MESSAGE
+        _save_chat_turn(db, user, payload.query, assistant_response)
+        return assistant_response
+
+    if _is_greeting_or_smalltalk(payload.query):
+        assistant_response = GREETING_ONLY_MESSAGE
         _save_chat_turn(db, user, payload.query, assistant_response)
         return assistant_response
 

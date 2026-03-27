@@ -41,35 +41,35 @@ async def generate_response(messages: list[dict[str, str]]) -> str:
     except ImportError as exc:
         raise LLMServiceError("Groq SDK is not installed") from exc
 
-    client = AsyncGroq(api_key=settings.groq_api_key)
-
     completion = None
     last_error: Exception | None = None
     candidate_models = _candidate_models()
 
-    for index, model_name in enumerate(candidate_models):
-        try:
-            completion = await client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                temperature=0.3,
-            )
-            break
-        except Exception as exc:
-            last_error = exc
-
-            has_more_models = index < len(candidate_models) - 1
-            if has_more_models and _is_model_decommissioned_error(exc):
-                next_model = candidate_models[index + 1]
-                logger.warning(
-                    "Groq model '%s' is unavailable. Retrying with '%s'.",
-                    model_name,
-                    next_model,
+    # Ensure the underlying async HTTP transport is closed deterministically.
+    async with AsyncGroq(api_key=settings.groq_api_key) as client:
+        for index, model_name in enumerate(candidate_models):
+            try:
+                completion = await client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    temperature=0.3,
                 )
-                continue
+                break
+            except Exception as exc:
+                last_error = exc
 
-            logger.exception("Groq API request failed for model '%s'", model_name)
-            raise LLMServiceError("Failed to generate AI response") from exc
+                has_more_models = index < len(candidate_models) - 1
+                if has_more_models and _is_model_decommissioned_error(exc):
+                    next_model = candidate_models[index + 1]
+                    logger.warning(
+                        "Groq model '%s' is unavailable. Retrying with '%s'.",
+                        model_name,
+                        next_model,
+                    )
+                    continue
+
+                logger.exception("Groq API request failed for model '%s'", model_name)
+                raise LLMServiceError("Failed to generate AI response") from exc
 
     if completion is None:
         raise LLMServiceError("Failed to generate AI response") from last_error
