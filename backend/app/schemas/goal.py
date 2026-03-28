@@ -52,6 +52,10 @@ class GoalPlanningSummary(BaseModel):
     final_sip: float
     sip: float
     timeline: float
+    original_timeline: float
+    adjusted_timeline: float
+    timeline_extended: bool
+    timeline_adjusted: bool
     adjusted: bool
     reason: str
     ai_reasoning: str
@@ -60,11 +64,13 @@ class GoalPlanningSummary(BaseModel):
     adjustment_reason_codes: list[str]
     original_target_date: date
     adjusted_target_date: date
+    new_target_date: date
     net_savings: float
     max_allowed_new_sip: float
     expected_return: float
     monthly_return: float
     return_assumption_note: str
+    adjustment_options: list[str]
 
 
 class GoalCreateResponse(BaseModel):

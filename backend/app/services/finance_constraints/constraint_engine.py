@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 
@@ -15,8 +16,11 @@ def enforce_goal_sip_constraints(*, calculated_sip: float, max_allowed: float, e
     allowed = max(_safe_float(max_allowed), 0.0)
     existing = max(_safe_float(existing_sip), 0.0)
 
+    def _round_up_2(value: float) -> float:
+        return math.ceil(value * 100) / 100
+
     if sip <= allowed:
-        final_sip = round(sip, 2)
+        final_sip = _round_up_2(sip)
         print(
             {
                 "calculated_sip": round(sip, 2),
@@ -31,7 +35,7 @@ def enforce_goal_sip_constraints(*, calculated_sip: float, max_allowed: float, e
             "reason": "Within safe investment limit",
         }
 
-    final_sip = round(allowed, 2)
+    final_sip = _round_up_2(allowed)
     print(
         {
             "calculated_sip": round(sip, 2),

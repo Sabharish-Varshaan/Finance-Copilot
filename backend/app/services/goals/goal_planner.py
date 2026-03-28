@@ -76,6 +76,57 @@ def _calculate_required_sip(
     return round(sip, 2)
 
 
+def _future_value_from_sip(monthly_sip: float, months: int, monthly_rate: float) -> float:
+    if monthly_sip <= 0 or months <= 0:
+        return 0.0
+    if monthly_rate <= 0:
+        return monthly_sip * months
+    denominator = (1 + monthly_rate) ** months - 1
+    return monthly_sip * (denominator / monthly_rate)
+
+
+def _is_achievable(
+    *,
+    target_amount: float,
+    current_amount: float,
+    monthly_sip: float,
+    months: int,
+    monthly_rate: float,
+) -> bool:
+    remaining_target = max(target_amount - current_amount, 0.0)
+    if remaining_target <= 0:
+        return True
+    future_value = _future_value_from_sip(monthly_sip, months, monthly_rate)
+    return future_value >= remaining_target
+
+
+def _recalculate_timeline_months(
+    *,
+    target_amount: float,
+    current_amount: float,
+    final_sip: float,
+    monthly_rate: float,
+    original_months: int,
+) -> int:
+    remaining_target = max(target_amount - current_amount, 0.0)
+    months = max(original_months, 1)
+
+    if remaining_target <= 0:
+        return months
+
+    if final_sip <= 0:
+        raise ValueError("No SIP capacity available to reach this goal")
+
+    max_months = 1200
+    while months <= max_months:
+        future_value = _future_value_from_sip(final_sip, months, monthly_rate)
+        if future_value >= remaining_target:
+            return months
+        months += 1
+
+    raise ValueError("Goal is not achievable within a reasonable timeline at current SIP")
+
+
 def _run_async_response(messages: list[dict[str, str]]) -> str:
     try:
         return asyncio.run(generate_response(messages))
@@ -247,6 +298,34 @@ def plan_goal(profile: dict[str, Any], goal: dict[str, Any], existing_goals: lis
     adjusted = bool(constraint_result.get("adjusted", False))
     reason_text = str(constraint_result.get("reason") or "Within safe investment limit")
 
+    timeline_extended = False
+    adjusted_timeline_years = timeline_years
+    adjusted_target_date = target_date
+
+    if adjusted:
+        adjusted_months = _recalculate_timeline_months(
+            target_amount=target_amount,
+            current_amount=current_amount,
+            final_sip=final_sip,
+            monthly_rate=monthly_return,
+            original_months=months,
+        )
+        if adjusted_months <= months:
+            raise ValueError("Reduced SIP requires a longer timeline to keep the goal feasible")
+        adjusted_timeline_years = round(adjusted_months / 12, 2)
+        adjusted_target_date = _add_months(date.today(), adjusted_months)
+        timeline_extended = adjusted_months > months
+
+    final_months = _months_between(date.today(), adjusted_target_date)
+    if not _is_achievable(
+        target_amount=target_amount,
+        current_amount=current_amount,
+        monthly_sip=final_sip,
+        months=final_months,
+        monthly_rate=monthly_return,
+    ):
+        raise ValueError("Goal remains unachievable with current SIP and timeline")
+
     if not ai_reasoning:
         ai_reasoning = reason_text
 
@@ -257,7 +336,11 @@ def plan_goal(profile: dict[str, Any], goal: dict[str, Any], existing_goals: lis
         "ai_sip": round(calculated_sip, 2),
         "final_sip": round(max(final_sip, 0.0), 2),
         "sip": round(max(final_sip, 0.0), 2),
-        "timeline": round(timeline_years, 2),
+        "timeline": round(adjusted_timeline_years, 2),
+        "original_timeline": round(timeline_years, 2),
+        "adjusted_timeline": round(adjusted_timeline_years, 2),
+        "timeline_extended": timeline_extended,
+        "timeline_adjusted": timeline_extended,
         "adjusted": adjusted,
         "reason": reason_text,
         "ai_reasoning": ai_reasoning,
@@ -265,10 +348,16 @@ def plan_goal(profile: dict[str, Any], goal: dict[str, Any], existing_goals: lis
         "existing_goals_sip_total": round(existing_goals_sip_total, 2),
         "adjustment_reason_codes": (["sip_above_max_allowed"] if adjusted else []),
         "original_target_date": target_date.isoformat(),
-        "adjusted_target_date": target_date.isoformat(),
+        "adjusted_target_date": adjusted_target_date.isoformat(),
+        "new_target_date": adjusted_target_date.isoformat(),
         "net_savings": round(net_savings, 2),
         "max_allowed_new_sip": round(max_allowed, 2),
         "expected_return": round(annual_return, 4),
         "monthly_return": round(monthly_return, 6),
         "return_assumption_note": "Expected return is a planning assumption, not a guaranteed outcome.",
+        "adjustment_options": [
+            "Increase timeline",
+            "Increase SIP",
+            "Reduce goal amount",
+        ],
     }

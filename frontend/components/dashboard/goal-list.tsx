@@ -376,6 +376,13 @@ export function GoalList({
           <p className="mt-1">Monthly return assumption: {(lastPlanSummary.monthly_return * 100).toFixed(2)}%</p>
           <p className="mt-1">{lastPlanSummary.return_assumption_note}</p>
           <p className="mt-1">Constraint reason: {lastPlanSummary.reason}</p>
+          {lastPlanSummary.timeline_adjusted ? (
+            <p className="mt-1 text-text">To keep your SIP within safe limits, your goal timeline has been extended.</p>
+          ) : null}
+          <p className="mt-1">
+            Timeline: {lastPlanSummary.original_timeline.toFixed(2)}y -> {lastPlanSummary.adjusted_timeline.toFixed(2)}y
+          </p>
+          <p className="mt-1">Options: {lastPlanSummary.adjustment_options.join(" | ")}</p>
           <p className="mt-1">Reason: {lastPlanSummary.ai_reasoning}</p>
         </div>
       ) : null}

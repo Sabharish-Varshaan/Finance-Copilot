@@ -39,6 +39,10 @@ export interface GoalPlanningSummary {
   final_sip: number;
   sip: number;
   timeline: number;
+  original_timeline: number;
+  adjusted_timeline: number;
+  timeline_extended: boolean;
+  timeline_adjusted: boolean;
   adjusted: boolean;
   reason: string;
   ai_reasoning: string;
@@ -47,11 +51,13 @@ export interface GoalPlanningSummary {
   adjustment_reason_codes: string[];
   original_target_date: string;
   adjusted_target_date: string;
+  new_target_date: string;
   net_savings: number;
   max_allowed_new_sip: number;
   expected_return: number;
   monthly_return: number;
   return_assumption_note: string;
+  adjustment_options: string[];
 }
 
 export interface GoalCreateResponse {
