@@ -6,13 +6,13 @@ from typing import Literal
 from app.api.deps import get_current_user
 from app.database.session import get_db
 from app.models.user import User
-from app.schemas.goal import GoalCreate, GoalRead, GoalUpdate
+from app.schemas.goal import GoalCreate, GoalCreateResponse, GoalRead, GoalUpdate
 from app.services.goal_service import create_goal, delete_goal, list_goals, update_goal
 
 router = APIRouter(prefix="/goals", tags=["goals"])
 
 
-@router.post("", response_model=GoalRead)
+@router.post("", response_model=GoalCreateResponse)
 def create_goal_endpoint(
     payload: GoalCreate,
     db: Session = Depends(get_db),

@@ -9,7 +9,9 @@ import { currency } from "@/lib/utils";
 import {
   extractGoalFeasibilityError,
   type GoalCreatePayload,
+  type GoalCreateResponse,
   type GoalFeasibilityError,
+  type GoalPlanningSummary,
   type GoalStatusFilter,
   type GoalUpdatePayload,
 } from "@/services/goalService";
@@ -20,7 +22,7 @@ interface GoalListProps {
   selectedStatus: GoalStatusFilter;
   isLoading: boolean;
   onStatusChange: (status: GoalStatusFilter) => Promise<void>;
-  onCreateGoal: (payload: GoalCreatePayload) => Promise<void>;
+  onCreateGoal: (payload: GoalCreatePayload) => Promise<GoalCreateResponse>;
   onUpdateGoal: (goalId: number, payload: GoalUpdatePayload) => Promise<void>;
   onDeleteGoal: (goalId: number) => Promise<void>;
 }
@@ -61,6 +63,7 @@ export function GoalList({
   const [statusBusy, setStatusBusy] = useState<GoalStatusFilter | null>(null);
   const [applyingAutoAdjust, setApplyingAutoAdjust] = useState(false);
   const [feasibilityError, setFeasibilityError] = useState<GoalFeasibilityError | null>(null);
+  const [lastPlanSummary, setLastPlanSummary] = useState<GoalPlanningSummary | null>(null);
 
   const [createForm, setCreateForm] = useState({
     category: "house",
@@ -102,7 +105,7 @@ export function GoalList({
 
     setIsCreating(true);
     try {
-      await onCreateGoal({
+      const result = await onCreateGoal({
         category: createForm.category,
         title: createForm.title.trim(),
         target_amount: targetAmount,
@@ -111,6 +114,7 @@ export function GoalList({
         expected_annual_return: riskToAnnualReturn(createForm.riskLevel),
         smart_adjust: createForm.smartAdjust,
       });
+      setLastPlanSummary(result.planning);
       setCreateForm({
         category: "house",
         title: "",
@@ -120,7 +124,11 @@ export function GoalList({
         smartAdjust: true,
       });
       setFeasibilityError(null);
-      toast.success("Goal created");
+      if (result.planning.adjusted) {
+        toast.success(`Goal adjusted and created at ${currency(result.planning.final_sip)}/month`);
+      } else {
+        toast.success("Goal created");
+      }
     } catch (error) {
       const parsed = extractGoalFeasibilityError(error);
       if (parsed) {
@@ -145,7 +153,7 @@ export function GoalList({
 
     setApplyingAutoAdjust(true);
     try {
-      await onCreateGoal({
+      const result = await onCreateGoal({
         category: createForm.category,
         title: createForm.title.trim(),
         target_amount: targetAmount,
@@ -154,6 +162,7 @@ export function GoalList({
         expected_annual_return: riskToAnnualReturn(createForm.riskLevel),
         smart_adjust: false,
       });
+      setLastPlanSummary(result.planning);
 
       setCreateForm({
         category: "house",
@@ -338,6 +347,38 @@ export function GoalList({
           </Button>
         </div>
       </form>
+
+      {lastPlanSummary ? (
+        <div className="mt-3 rounded-2xl border border-white/10 bg-panelAlt/65 p-3 text-sm text-muted">
+          <p className="font-medium text-text">Last goal planning result</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <p>
+              Original SIP: <span className="text-text">{currency(lastPlanSummary.raw_sip)}</span>
+            </p>
+            <p>
+              Final SIP: <span className="text-text">{currency(lastPlanSummary.final_sip)}</span>
+            </p>
+            <p>
+              Original target date: <span className="text-text">{lastPlanSummary.original_target_date}</span>
+            </p>
+            <p>
+              Adjusted target date: <span className="text-text">{lastPlanSummary.adjusted_target_date}</span>
+            </p>
+          </div>
+          <p className="mt-2 text-text">
+            {lastPlanSummary.adjusted
+              ? `This goal was adjusted to ${currency(lastPlanSummary.final_sip)}/month to match your financial capacity.`
+              : `This SIP is within your safe investment limit at ${currency(lastPlanSummary.final_sip)}/month.`}
+          </p>
+          <p className="mt-1 text-text">
+            Expected Return Assumed: {(lastPlanSummary.expected_return * 100).toFixed(0)}% annually (based on your risk profile)
+          </p>
+          <p className="mt-1">Monthly return assumption: {(lastPlanSummary.monthly_return * 100).toFixed(2)}%</p>
+          <p className="mt-1">{lastPlanSummary.return_assumption_note}</p>
+          <p className="mt-1">Constraint reason: {lastPlanSummary.reason}</p>
+          <p className="mt-1">Reason: {lastPlanSummary.ai_reasoning}</p>
+        </div>
+      ) : null}
 
       <div className="mt-5 space-y-3">
         {isLoading ? <p className="text-sm text-muted">Loading goals...</p> : null}

@@ -16,6 +16,7 @@ import {
   deleteGoal,
   listGoals,
   type GoalCreatePayload,
+  type GoalCreateResponse,
   type GoalStatusFilter,
   type GoalUpdatePayload,
   updateGoal,
@@ -70,9 +71,10 @@ export default function DashboardPage() {
     await loadGoalsByStatus(status);
   }
 
-  async function handleCreateGoal(payload: GoalCreatePayload) {
-    await createGoal(payload);
+  async function handleCreateGoal(payload: GoalCreatePayload): Promise<GoalCreateResponse> {
+    const result = await createGoal(payload);
     await loadGoalsByStatus(selectedGoalStatus);
+    return result;
   }
 
   async function handleUpdateGoal(goalId: number, payload: GoalUpdatePayload) {

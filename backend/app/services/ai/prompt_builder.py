@@ -55,6 +55,9 @@ def _yes_no(value: Any) -> str:
 
 
 def _primary_priority(flags: dict[str, Any]) -> str:
+    reasons = flags.get("investability_reasons", [])
+    if isinstance(reasons, list) and "no_monthly_surplus" in reasons:
+        return "Create monthly surplus before starting new SIP commitments"
     if bool(flags.get("high_debt")):
         return "Debt repayment and EMI reduction"
     if bool(flags.get("needs_emergency_fund")):
@@ -75,6 +78,9 @@ def _metrics_section(financial_analysis: dict[str, Any] | None) -> str:
     savings_rate = float(metrics.get("savings_rate", 0.0))
     debt_ratio = float(metrics.get("debt_ratio", 0.0))
     emergency_months = float(metrics.get("emergency_months", metrics.get("emergency_fund_months", 0.0)))
+    available_surplus = float(metrics.get("available_surplus", 0.0))
+    safety_buffer_amount = float(metrics.get("safety_buffer_amount", 0.0))
+    investable_surplus = float(metrics.get("investable_surplus", 0.0))
 
     savings_status = result_by_name.get("savings_rate", {}).get("status", "unknown")
     debt_status = result_by_name.get("debt_ratio", {}).get("status", "unknown")
@@ -85,7 +91,10 @@ def _metrics_section(financial_analysis: dict[str, Any] | None) -> str:
         f"- Savings rate: {savings_rate * 100:.1f}% ({savings_status})\n"
         f"- Debt ratio: {debt_ratio * 100:.1f}% ({debt_status})\n"
         f"- Emergency fund: {emergency_months:.1f} months ({emergency_status})\n"
-        f"- Investment presence: {investments_status}"
+        f"- Investment presence: {investments_status}\n"
+        f"- Available surplus: {_format_currency(available_surplus)} per month\n"
+        f"- Safety buffer reserve: {_format_currency(safety_buffer_amount)} per month\n"
+        f"- Investable surplus: {_format_currency(investable_surplus)} per month"
     )
 
 
@@ -94,12 +103,15 @@ def _flags_section(financial_analysis: dict[str, Any] | None) -> str:
         return "- Decisions unavailable"
 
     flags = financial_analysis.get("flags", {})
+    investability_reasons = flags.get("investability_reasons", [])
+    reasons_text = ", ".join(str(item) for item in investability_reasons) if investability_reasons else "none"
     return (
         f"- should_increase_savings: {_yes_no(flags.get('should_increase_savings'))}\n"
         f"- should_invest: {_yes_no(flags.get('should_invest'))}\n"
         f"- high_debt: {_yes_no(flags.get('high_debt'))}\n"
         f"- can_take_loan: {_yes_no(flags.get('can_take_loan'))}\n"
-        f"- needs_emergency_fund: {_yes_no(flags.get('needs_emergency_fund'))}"
+        f"- needs_emergency_fund: {_yes_no(flags.get('needs_emergency_fund'))}\n"
+        f"- investability_reasons: {reasons_text}"
     )
 
 
@@ -219,6 +231,9 @@ def build_messages(
         "23. When multiple valid financial standards exist, use ranges instead of fixed numbers (example: maintain 6-12 months of emergency fund depending on income stability).\n"
         "24. For high-risk scenarios (especially taking loans to invest), always give a strong NO and clearly explain the downside risk.\n"
         "25. Use natural, conversational advisor language. Avoid robotic phrasing while staying concise and decisive.\n\n"
+        "26. For SIP affordability questions, always cite three numbers: required SIP, investable surplus, and monthly shortfall/surplus.\n"
+        "27. If required SIP is higher than investable surplus, clearly state it is not feasible now and suggest one concrete adjustment path.\n"
+        "28. Do not use a fixed percent cap to judge SIP affordability. Base guidance on monthly surplus after expenses, EMI, and safety buffer.\n\n"
         "RESPONSE STYLE:\n"
         "- Start with a clear, strong decision\n"
         "- Explain concrete financial consequences (not warnings or cautions)\n"

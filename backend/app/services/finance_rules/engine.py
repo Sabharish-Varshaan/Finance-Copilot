@@ -12,6 +12,34 @@ SAVINGS_RATE_TARGET_MIN = 0.20
 DEBT_RATIO_HIGH_THRESHOLD = 0.30
 EMERGENCY_MONTHS_MIN = 3.0
 LOAN_MAX_DEBT_RATIO = 0.30
+SAFETY_BUFFER_RATE = 0.10
+MIN_SAFETY_BUFFER = 5000.0
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _surplus_metrics(profile: Any) -> dict[str, float]:
+    monthly_income = _safe_float(getattr(profile, "income", 0.0))
+    monthly_expenses = _safe_float(getattr(profile, "expenses", 0.0))
+    monthly_emi = _safe_float(getattr(profile, "emi", 0.0))
+
+    available_surplus = monthly_income - monthly_expenses - monthly_emi
+    safety_buffer_amount = max(monthly_income * SAFETY_BUFFER_RATE, MIN_SAFETY_BUFFER)
+    investable_surplus = max(available_surplus - safety_buffer_amount, 0.0)
+
+    return {
+        "available_surplus": round(available_surplus, 2),
+        "safety_buffer_amount": round(safety_buffer_amount, 2),
+        "investable_surplus": round(investable_surplus, 2),
+        "sip_to_surplus_ratio": (
+            round(investable_surplus / available_surplus, 2) if available_surplus > 0 else 0.0
+        ),
+    }
 
 
 def _confidence_level(profile: Any, metrics: dict[str, Any]) -> str:
@@ -43,13 +71,15 @@ def _confidence_level(profile: Any, metrics: dict[str, Any]) -> str:
     return "High"
 
 
-def _decision_flags(metrics: dict[str, Any]) -> dict[str, bool]:
+def _decision_flags(metrics: dict[str, Any]) -> dict[str, Any]:
     savings_rate = float(metrics.get("savings_rate", 0.0))
     debt_ratio = float(metrics.get("debt_ratio", 1.0))
     emergency_months = float(
         metrics.get("emergency_months", metrics.get("emergency_fund_months", 0.0))
     )
     has_investments = bool(metrics.get("investment_presence", False))
+    investable_surplus = float(metrics.get("investable_surplus", 0.0))
+    available_surplus = float(metrics.get("available_surplus", 0.0))
 
     needs_emergency_fund = emergency_months < EMERGENCY_MONTHS_MIN
     high_debt = debt_ratio > DEBT_RATIO_HIGH_THRESHOLD
@@ -60,7 +90,28 @@ def _decision_flags(metrics: dict[str, Any]) -> dict[str, bool]:
         and emergency_months >= EMERGENCY_MONTHS_MIN
     )
     # Start investing only when basics are safe enough.
-    should_invest = (not has_investments) and (not high_debt) and (not needs_emergency_fund)
+    has_investable_surplus = investable_surplus > 0
+    should_invest = (
+        (not has_investments)
+        and (not high_debt)
+        and (not needs_emergency_fund)
+        and has_investable_surplus
+    )
+
+    investability_reasons: list[str] = []
+    if has_investments:
+        investability_reasons.append("already_investing")
+    if high_debt:
+        investability_reasons.append("debt_pressure")
+    if needs_emergency_fund:
+        investability_reasons.append("emergency_shortfall")
+    if available_surplus <= 0:
+        investability_reasons.append("no_monthly_surplus")
+    elif not has_investable_surplus:
+        investability_reasons.append("surplus_reserved_for_safety_buffer")
+
+    if should_invest:
+        investability_reasons.append("eligible_to_start_sip")
 
     return {
         "should_increase_savings": should_increase_savings,
@@ -68,6 +119,7 @@ def _decision_flags(metrics: dict[str, Any]) -> dict[str, bool]:
         "high_debt": high_debt,
         "can_take_loan": can_take_loan,
         "needs_emergency_fund": needs_emergency_fund,
+        "investability_reasons": investability_reasons,
     }
 
 
@@ -85,6 +137,7 @@ def run_all_rules(profile: Any, investments: Any = None) -> dict[str, Any]:
     emergency = result_map["emergency_fund"]
     debt = result_map["debt_ratio"]
     investments_result = result_map["investment_presence"]
+    surplus = _surplus_metrics(profile)
 
     has_external_investments = bool(investments) if investments is not None else bool(profile.has_investments)
 
@@ -109,6 +162,10 @@ def run_all_rules(profile: Any, investments: Any = None) -> dict[str, Any]:
             # Compatibility alias for older prompt consumers.
             "emergency_fund_months": emergency["value"],
             "investment_presence": bool(investments_result["value"]),
+            "available_surplus": surplus["available_surplus"],
+            "safety_buffer_amount": surplus["safety_buffer_amount"],
+            "investable_surplus": surplus["investable_surplus"],
+            "sip_to_surplus_ratio": surplus["sip_to_surplus_ratio"],
         },
         "flags": _decision_flags(
             {
@@ -116,6 +173,8 @@ def run_all_rules(profile: Any, investments: Any = None) -> dict[str, Any]:
                 "debt_ratio": debt["value"],
                 "emergency_months": emergency["value"],
                 "investment_presence": bool(investments_result["value"]),
+                "available_surplus": surplus["available_surplus"],
+                "investable_surplus": surplus["investable_surplus"],
             }
         ),
         "confidence": _confidence_level(

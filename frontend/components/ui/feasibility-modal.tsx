@@ -15,7 +15,10 @@ export function FeasibilityModal({
   onApplyAutoAdjust,
   applyingAutoAdjust,
 }: FeasibilityModalProps) {
-  const shortfall = payload.required_sip - payload.suggested_sip;
+  const shortfall = payload.shortfall_amount ?? Math.max(payload.required_sip - payload.suggested_sip, 0);
+  const availableSurplus = payload.available_surplus ?? payload.available_savings;
+  const safetyBuffer = payload.safety_buffer_amount ?? 0;
+  const investableSurplus = payload.investable_surplus ?? payload.suggested_sip;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -29,8 +32,8 @@ export function FeasibilityModal({
             <p className="text-sm font-semibold text-text">{currency(payload.required_sip)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted">Available Savings</p>
-            <p className="text-sm font-semibold text-text">{currency(payload.available_savings)}</p>
+            <p className="text-xs text-muted">Investable Surplus</p>
+            <p className="text-sm font-semibold text-text">{currency(investableSurplus)}</p>
           </div>
           <div>
             <p className="text-xs text-muted">Suggested SIP</p>
@@ -38,7 +41,20 @@ export function FeasibilityModal({
           </div>
         </div>
 
-        <p className="mt-3 text-sm text-muted">Shortfall: {currency(shortfall)}</p>
+        <div className="mt-3 grid gap-2 rounded-2xl border border-white/10 bg-panelAlt/60 p-3 sm:grid-cols-3">
+          <div>
+            <p className="text-xs text-muted">Available Surplus</p>
+            <p className="text-sm font-semibold text-text">{currency(availableSurplus)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted">Safety Buffer</p>
+            <p className="text-sm font-semibold text-text">{currency(safetyBuffer)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted">Shortfall</p>
+            <p className="text-sm font-semibold text-text">{currency(shortfall)}</p>
+          </div>
+        </div>
 
         <div className="mt-3 rounded-2xl border border-white/10 bg-panelAlt/60 p-3">
           <p className="text-sm font-medium text-text">Suggestions</p>
@@ -54,7 +70,7 @@ export function FeasibilityModal({
             <p className="font-medium">Smart adjust recommendation</p>
             <p className="mt-1 text-muted">
               Extend timeline to {payload.auto_adjustment.adjusted_years} years (target date {payload.auto_adjustment.adjusted_target_date})
-              with feasible SIP around {currency(payload.auto_adjustment.feasible_sip)}.
+              so your SIP aligns near {currency(payload.auto_adjustment.feasible_sip)} per month.
             </p>
           </div>
         ) : null}

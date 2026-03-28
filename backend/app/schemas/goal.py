@@ -42,3 +42,31 @@ class GoalRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class GoalPlanningSummary(BaseModel):
+    goal_name: str
+    raw_sip: float
+    calculated_sip: float
+    ai_sip: float
+    final_sip: float
+    sip: float
+    timeline: float
+    adjusted: bool
+    reason: str
+    ai_reasoning: str
+    backend_limit: float
+    existing_goals_sip_total: float
+    adjustment_reason_codes: list[str]
+    original_target_date: date
+    adjusted_target_date: date
+    net_savings: float
+    max_allowed_new_sip: float
+    expected_return: float
+    monthly_return: float
+    return_assumption_note: str
+
+
+class GoalCreateResponse(BaseModel):
+    goal: GoalRead
+    planning: GoalPlanningSummary

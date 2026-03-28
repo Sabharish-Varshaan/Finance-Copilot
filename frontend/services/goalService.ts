@@ -31,11 +31,46 @@ export interface GoalAutoAdjustment {
   feasible_sip: number;
 }
 
+export interface GoalPlanningSummary {
+  goal_name: string;
+  raw_sip: number;
+  calculated_sip: number;
+  ai_sip: number;
+  final_sip: number;
+  sip: number;
+  timeline: number;
+  adjusted: boolean;
+  reason: string;
+  ai_reasoning: string;
+  backend_limit: number;
+  existing_goals_sip_total: number;
+  adjustment_reason_codes: string[];
+  original_target_date: string;
+  adjusted_target_date: string;
+  net_savings: number;
+  max_allowed_new_sip: number;
+  expected_return: number;
+  monthly_return: number;
+  return_assumption_note: string;
+}
+
+export interface GoalCreateResponse {
+  goal: Goal;
+  planning: GoalPlanningSummary;
+}
+
 export interface GoalFeasibilityError {
   valid: false;
   reason: string;
   required_sip: number;
   available_savings: number;
+  available_surplus?: number;
+  safety_buffer_amount?: number;
+  investable_surplus?: number;
+  total_existing_sip?: number;
+  shortfall_amount?: number;
+  sip_to_investable_surplus_ratio?: number | null;
+  reason_codes?: string[];
   suggested_sip: number;
   suggestions: string[];
   auto_adjustment?: GoalAutoAdjustment;
@@ -47,7 +82,7 @@ export async function listGoals(status: GoalStatusFilter = "active") {
 }
 
 export async function createGoal(payload: GoalCreatePayload) {
-  const response = await api.post<Goal>("/goals", payload);
+  const response = await api.post<GoalCreateResponse>("/goals", payload);
   return response.data;
 }
 
@@ -89,6 +124,16 @@ export function extractGoalFeasibilityError(error: unknown): GoalFeasibilityErro
     reason: candidate.reason,
     required_sip: candidate.required_sip,
     available_savings: candidate.available_savings,
+    available_surplus: typeof candidate.available_surplus === "number" ? candidate.available_surplus : undefined,
+    safety_buffer_amount: typeof candidate.safety_buffer_amount === "number" ? candidate.safety_buffer_amount : undefined,
+    investable_surplus: typeof candidate.investable_surplus === "number" ? candidate.investable_surplus : undefined,
+    total_existing_sip: typeof candidate.total_existing_sip === "number" ? candidate.total_existing_sip : undefined,
+    shortfall_amount: typeof candidate.shortfall_amount === "number" ? candidate.shortfall_amount : undefined,
+    sip_to_investable_surplus_ratio:
+      typeof candidate.sip_to_investable_surplus_ratio === "number" || candidate.sip_to_investable_surplus_ratio === null
+        ? candidate.sip_to_investable_surplus_ratio
+        : undefined,
+    reason_codes: Array.isArray(candidate.reason_codes) ? candidate.reason_codes.map((item) => String(item)) : undefined,
     suggested_sip: candidate.suggested_sip,
     suggestions: candidate.suggestions.map((item) => String(item)),
     auto_adjustment: candidate.auto_adjustment,

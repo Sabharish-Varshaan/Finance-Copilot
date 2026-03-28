@@ -7,8 +7,6 @@ DEFAULT_MULTIPLIER = 33.0
 INFLATION_RATE = 0.06
 SAFETY_BUFFER = 1.2
 EMERGENCY_MONTHS_TARGET = 6
-EMERGENCY_GAP_SIP_REDUCTION = 0.25
-DEBT_PRESSURE_SIP_REDUCTION = 0.20
 TAX_SUGGESTION_INCOME_THRESHOLD = 700000
 
 
@@ -105,11 +103,9 @@ def generate_fire_plan(
     emergency_gap = current_savings < emergency_threshold
     if emergency_gap:
         recommendation_flags.append("build_emergency_fund")
-        monthly_sip_fire = round(monthly_sip_fire * (1 - EMERGENCY_GAP_SIP_REDUCTION), 2)
 
     if monthly_income > 0 and monthly_emi > 0.4 * monthly_income:
         recommendation_flags.append("reduce_debt")
-        monthly_sip_fire = round(monthly_sip_fire * (1 - DEBT_PRESSURE_SIP_REDUCTION), 2)
 
     insurance_coverage = max(_safe_float(profile.get("insurance_coverage"), 0.0), 0.0)
     insurance_gap = insurance_coverage < (annual_income * 10)

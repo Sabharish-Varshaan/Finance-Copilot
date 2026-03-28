@@ -104,6 +104,45 @@ def _is_fire_related_query(query: str) -> bool:
     return any(term in text for term in fire_terms)
 
 
+def _is_sip_affordability_query(query: str) -> bool:
+    text = (query or "").strip().lower()
+    if not text:
+        return False
+    terms = {"sip", "invest", "investment", "afford", "feasible", "realistic", "goal"}
+    return any(term in text for term in terms)
+
+
+def _fallback_finance_response(query: str, financial_analysis: dict | None) -> str:
+    if not financial_analysis:
+        return FALLBACK_LLM_MESSAGE
+
+    metrics = financial_analysis.get("metrics", {}) if isinstance(financial_analysis, dict) else {}
+    flags = financial_analysis.get("flags", {}) if isinstance(financial_analysis, dict) else {}
+
+    if _is_sip_affordability_query(query):
+        investable_surplus = float(metrics.get("investable_surplus", 0.0))
+        available_surplus = float(metrics.get("available_surplus", 0.0))
+        safety_buffer_amount = float(metrics.get("safety_buffer_amount", 0.0))
+        should_invest = bool(flags.get("should_invest"))
+
+        if should_invest:
+            return (
+                "Based on your financial data, starting or increasing SIP is feasible now. "
+                f"Your available surplus is about ₹{available_surplus:,.0f} per month, "
+                f"with ₹{safety_buffer_amount:,.0f} reserved as safety buffer, leaving "
+                f"₹{investable_surplus:,.0f} investable each month."
+            )
+
+        return (
+            "Based on your financial data, this SIP is not feasible right now. "
+            f"Your available surplus is about ₹{available_surplus:,.0f} per month, "
+            f"and after a ₹{safety_buffer_amount:,.0f} safety buffer, investable surplus is ₹{investable_surplus:,.0f}. "
+            "You should first improve monthly surplus or extend the goal timeline."
+        )
+
+    return FALLBACK_LLM_MESSAGE
+
+
 def _years_from_target_date(target_date: date) -> int:
     days_remaining = (target_date - date.today()).days
     if days_remaining <= 0:
@@ -209,7 +248,7 @@ def chat_with_mentor(db: Session, user: User, payload: ChatRequest) -> str:
     try:
         assistant_response = _run_async_response(messages)
     except Exception:
-        assistant_response = FALLBACK_LLM_MESSAGE
+        assistant_response = _fallback_finance_response(payload.query, financial_analysis)
 
     _save_chat_turn(db, user, payload.query, assistant_response)
     return assistant_response
