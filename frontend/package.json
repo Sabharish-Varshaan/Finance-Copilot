@@ -6,8 +6,8 @@
     "node": ">=20 <21"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --turbo",
+    "build": "NEXT_DISABLE_WEBPACK_CACHE=1 next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -21,6 +21,7 @@
     "react-dom": "18.3.1",
     "react-hot-toast": "^2.4.1",
     "react-markdown": "^9.0.1",
+    "recharts": "^2.13.3",
     "remark-gfm": "^4.0.1",
     "zustand": "^5.0.3"
   },

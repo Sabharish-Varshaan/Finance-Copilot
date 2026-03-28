@@ -38,6 +38,9 @@ class GoalRead(BaseModel):
     target_date: date
     monthly_sip_required: float
     status: str
+    source: str = "manual"  # "fire" or "manual"
+    fire_plan_id: int | None = None
+    monthly_sip_allocated: float = 0
     created_at: datetime
     updated_at: datetime
 

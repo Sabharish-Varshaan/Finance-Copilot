@@ -25,6 +25,10 @@ class Goal(Base):
     target_date: Mapped[date] = mapped_column(Date, nullable=False)
     monthly_sip_required: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
+    fire_plan_id: Mapped[int | None] = mapped_column(ForeignKey("fire_plans.id"), nullable=True, index=True)
+    monthly_sip_allocated: Mapped[float] = mapped_column(Float, nullable=False, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

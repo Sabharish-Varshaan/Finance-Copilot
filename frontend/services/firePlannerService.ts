@@ -19,7 +19,34 @@ export interface FireGoalInput {
 export interface FireGoalPlan {
   name: string;
   target: number;
+  target_amount_original?: number;
+  target_amount_inflated?: number;
+  inflation_impact?: number;
   monthly_sip: number;
+  monthly_sip_required?: number;
+  status?: "achievable" | "adjusted_plan" | "constrained" | "unrealistic" | string;
+  status_description?: string;
+  underfunded?: boolean;
+  timeline_adjusted?: boolean;
+  adjusted_years?: number | null;
+}
+
+export interface FireScenario {
+  name: "current_sip" | "sip_plus_25" | "sip_minus_25" | string;
+  sip: number;
+  years_to_target: number | null;
+  target_age: number | null;
+  achieved_age?: number | null;
+  original_target_age?: number | null;
+  status: "achievable" | "unrealistic" | string;
+}
+
+export interface FirePreConditions {
+  required_emergency_fund: number;
+  current_emergency_fund: number;
+  required_insurance: number;
+  current_insurance: number;
+  monthly_surplus: number;
 }
 
 export interface FirePlanRecord {
@@ -27,6 +54,7 @@ export interface FirePlanRecord {
   fire_target: number;
   years_to_retire: number;
   monthly_sip_fire: number;
+  minimum_sip_required?: number;
   goal_plan: FireGoalPlan[];
   monthly_plan: { month: number; corpus: number }[];
   allocation: { equity: number; debt: number };
@@ -36,6 +64,19 @@ export interface FirePlanRecord {
   recommendation_flags: string[];
   retirement_age: number;
   multiplier: number;
+  expected_return: number;
+  return_source: "user" | "system";
+  goal_status?: "achievable" | "needs_adjustment" | "unrealistic" | string;
+  explanation?: string;
+  risk_flags?: string[];
+  scenarios?: FireScenario[];
+  priority_order?: string[];
+  priority_text?: string[];
+  next_steps?: string[];
+  pre_conditions?: FirePreConditions | null;
+  timeline_adjusted?: boolean;
+  adjusted_timeline_years?: number | null;
+  new_target_date?: string | null;
   created_at: string;
 }
 
@@ -52,6 +93,7 @@ export interface FirePlanRequest {
   goals: FireGoalInput[];
   retirement_age?: number;
   multiplier?: number;
+  expected_return?: number;
 }
 
 export async function createFirePlan(payload: FirePlanRequest) {
@@ -67,4 +109,14 @@ export async function listFirePlanHistory() {
 export async function getFirePlanById(planId: number) {
   const response = await api.get<FirePlanRecord>(`/fire-plan/${planId}`);
   return response.data;
+}
+
+export async function getCurrentFirePlan() {
+  try {
+    const response = await api.get<FirePlanRecord>("/fire-plan/current");
+    return response.data;
+  } catch (error) {
+    // No current plan exists
+    return null;
+  }
 }

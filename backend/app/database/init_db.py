@@ -13,11 +13,22 @@ SCHEMA_UPGRADE_STATEMENTS = (
     "ALTER TABLE fire_plans ADD COLUMN IF NOT EXISTS inflation_rate DOUBLE PRECISION NOT NULL DEFAULT 0.06;",
     "ALTER TABLE fire_plans ADD COLUMN IF NOT EXISTS safety_buffer DOUBLE PRECISION NOT NULL DEFAULT 1.2;",
     "ALTER TABLE fire_plans ADD COLUMN IF NOT EXISTS recommendation_flags TEXT NOT NULL DEFAULT '';",
+    "ALTER TABLE fire_plans ADD COLUMN IF NOT EXISTS expected_return DOUBLE PRECISION NOT NULL DEFAULT 0.10;",
+    "ALTER TABLE fire_plans ADD COLUMN IF NOT EXISTS return_source VARCHAR(16) NOT NULL DEFAULT 'system';",
     "ALTER TABLE fire_plans ADD COLUMN IF NOT EXISTS insurance_coverage DOUBLE PRECISION NOT NULL DEFAULT 0;",
     "ALTER TABLE fire_plans ADD COLUMN IF NOT EXISTS insurance_gap BOOLEAN NOT NULL DEFAULT FALSE;",
     "ALTER TABLE fire_plans ADD COLUMN IF NOT EXISTS tax_suggestions TEXT NOT NULL DEFAULT '';",
     "ALTER TABLE fire_plans ADD COLUMN IF NOT EXISTS monthly_plan TEXT NOT NULL DEFAULT '';",
     "ALTER TABLE financial_profiles ADD COLUMN IF NOT EXISTS insurance_coverage DOUBLE PRECISION NOT NULL DEFAULT 0;",
+    "ALTER TABLE goals ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'manual';",
+    "ALTER TABLE goals ADD COLUMN IF NOT EXISTS fire_plan_id INTEGER;",
+    "ALTER TABLE goals ADD COLUMN IF NOT EXISTS monthly_sip_allocated DOUBLE PRECISION NOT NULL DEFAULT 0;",
+    "ALTER TABLE fire_goals ADD COLUMN IF NOT EXISTS monthly_sip_required DOUBLE PRECISION NOT NULL DEFAULT 0;",
+    "ALTER TABLE fire_goals ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'achievable';",
+    "ALTER TABLE fire_goals ADD COLUMN IF NOT EXISTS status_description TEXT NOT NULL DEFAULT '';",
+    "ALTER TABLE fire_goals ADD COLUMN IF NOT EXISTS underfunded BOOLEAN NOT NULL DEFAULT FALSE;",
+    "ALTER TABLE fire_goals ADD COLUMN IF NOT EXISTS timeline_adjusted BOOLEAN NOT NULL DEFAULT FALSE;",
+    "ALTER TABLE fire_goals ADD COLUMN IF NOT EXISTS adjusted_years INTEGER;",
 )
 
 
@@ -29,6 +40,8 @@ def apply_schema_upgrades() -> None:
 
 
 def init_db(max_retries: int = 10, wait_seconds: int = 2) -> None:
+    # Auto-migrate known additive schema changes on startup so deployments do not
+    # require running SQL scripts manually for these columns.
     for attempt in range(1, max_retries + 1):
         try:
             Base.metadata.create_all(bind=engine)

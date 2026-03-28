@@ -380,7 +380,7 @@ export function GoalList({
             <p className="mt-1 text-text">To keep your SIP within safe limits, your goal timeline has been extended.</p>
           ) : null}
           <p className="mt-1">
-            Timeline: {lastPlanSummary.original_timeline.toFixed(2)}y -> {lastPlanSummary.adjusted_timeline.toFixed(2)}y
+            Timeline: {lastPlanSummary.original_timeline.toFixed(2)}y {" → "} {lastPlanSummary.adjusted_timeline.toFixed(2)}y
           </p>
           <p className="mt-1">Options: {lastPlanSummary.adjustment_options.join(" | ")}</p>
           <p className="mt-1">Reason: {lastPlanSummary.ai_reasoning}</p>
@@ -397,6 +397,9 @@ export function GoalList({
         {goals.map((goal) => {
           const isEditing = editingGoalId === goal.id;
           const isBusy = busyGoalId === goal.id;
+          const source = goal.source || "manual";
+          const allocatedSip = goal.monthly_sip_allocated || 0;
+          const showSipComparison = source === "fire" && allocatedSip > 0 && allocatedSip !== goal.monthly_sip_required;
 
           return (
             <div
@@ -415,6 +418,13 @@ export function GoalList({
                   <span className="rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[11px] uppercase tracking-wide text-accent">
                     {goal.category}
                   </span>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] uppercase tracking-wide ${
+                    source === "fire"
+                      ? "border border-warning/25 bg-warning/10 text-warning"
+                      : "border border-white/15 bg-black/20 text-muted"
+                  }`}>
+                    {source === "fire" ? "[FIRE]" : "[Manual]"}
+                  </span>
                 </div>
               </div>
 
@@ -423,6 +433,13 @@ export function GoalList({
                   <div className="mt-3 grid gap-1 text-sm text-muted sm:grid-cols-3">
                       <p>
                         SIP: <span className="text-accent">{currency(goal.monthly_sip_required)}</span>
+                        {showSipComparison && (
+                          <>
+                            <span className="text-xs text-muted"> (allocated: </span>
+                            <span className="text-xs text-warning">{currency(allocatedSip)}</span>
+                            <span className="text-xs text-muted">)</span>
+                          </>
+                        )}
                       </p>
                       <p>
                         Target date: <span className="text-text">{goal.target_date.slice(0, 10)}</span>

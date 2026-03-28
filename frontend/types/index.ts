@@ -50,8 +50,20 @@ export interface Goal {
   target_date: string;
   monthly_sip_required: number;
   status: string;
+  source?: "fire" | "manual";
+  fire_plan_id?: number | null;
+  monthly_sip_allocated?: number;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Unified goal with source tracking for FIRE + manual goals sync
+ */
+export interface UnifiedGoal extends Goal {
+  source: "fire" | "manual";
+  fire_plan_id?: number | null;
+  monthly_sip_allocated: number;
 }
 
 export interface ChatMessage {

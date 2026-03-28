@@ -24,6 +24,8 @@ class FirePlan(Base):
     inflation_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.06)
     safety_buffer: Mapped[float] = mapped_column(Float, nullable=False, default=1.2)
     recommendation_flags: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    expected_return: Mapped[float] = mapped_column(Float, nullable=False, default=0.10)
+    return_source: Mapped[str] = mapped_column(String(16), nullable=False, default="system")
 
     fire_target: Mapped[float] = mapped_column(Float, nullable=False)
     years_to_retire: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -55,6 +57,13 @@ class FireGoal(Base):
     target_amount: Mapped[float] = mapped_column(Float, nullable=False)
     years: Mapped[int] = mapped_column(Integer, nullable=False)
     monthly_sip: Mapped[float] = mapped_column(Float, nullable=False)
+    
+    monthly_sip_required: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="achievable")
+    status_description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    underfunded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    timeline_adjusted: Mapped[bool] = mapped_column(default=False)
+    adjusted_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
