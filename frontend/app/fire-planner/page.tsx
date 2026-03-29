@@ -9,9 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatCurrencyCompact, formatCurrencyWithHint } from "@/lib/utils";
+import { formatINR, formatINRShort } from "@/lib/inr";
 import { getProfile } from "@/services/profileService";
 import {
+  analyzeLifeEvent,
+  applyLifeEvent,
   createFirePlan,
+  type LifeEventResponse,
+  type LifeEventType,
   getCurrentFirePlan,
   getFirePlanById,
   listFirePlanHistory,
@@ -94,6 +99,32 @@ const SCENARIO_LABELS: Record<string, string> = {
 };
 
 const defaultGoal: FireGoalInput = { name: "House", amount: 5000000, years: 10 };
+const defaultEventDate = new Date().toISOString().slice(0, 10);
+
+const deduplicateHistory = (items: FirePlanHistoryItem[]): FirePlanHistoryItem[] => {
+  const seen = new Set<string>();
+  const unique: FirePlanHistoryItem[] = [];
+  
+  for (const item of items) {
+    const key = `${item.fire_target}-${item.monthly_sip_fire}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(item);
+      if (unique.length >= 5) break;
+    }
+  }
+  
+  return unique;
+};
+
+const LIFE_EVENT_OPTIONS: Array<{ label: string; value: LifeEventType }> = [
+  { label: "Bonus", value: "bonus" },
+  { label: "Inheritance", value: "inheritance" },
+  { label: "Marriage", value: "marriage" },
+  { label: "Child", value: "child" },
+  { label: "Job Loss", value: "job_loss" },
+  { label: "Salary Increase", value: "salary_increase" },
+];
 
 export default function FirePlannerPage() {
   const [profile, setProfile] = useState<FireProfileInput>(defaultProfile);
@@ -107,6 +138,12 @@ export default function FirePlannerPage() {
   const [history, setHistory] = useState<FirePlanHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [lifeEventType, setLifeEventType] = useState<LifeEventType>("bonus");
+  const [lifeEventAmount, setLifeEventAmount] = useState<number>(500000);
+  const [lifeEventDate, setLifeEventDate] = useState<string>(defaultEventDate);
+  const [lifeEventLoading, setLifeEventLoading] = useState(false);
+  const [lifeEventResult, setLifeEventResult] = useState<LifeEventResponse | null>(null);
+  const [lifeEventApplying, setLifeEventApplying] = useState(false);
   const currentInvestmentTotal =
     (result?.investment_breakdown?.equity ?? 0) +
     (result?.investment_breakdown?.debt ?? 0) +
@@ -141,7 +178,7 @@ export default function FirePlannerPage() {
         }
 
         const rows = await listFirePlanHistory();
-        setHistory(rows);
+        setHistory(deduplicateHistory(rows));
         
         // PHASE 6.4: Auto-load current plan on mount
         if (rows.length > 0) {
@@ -266,16 +303,18 @@ export default function FirePlannerPage() {
         investment_mode: investmentMode === "auto" ? undefined : investmentMode,
       });
       setResult(plan);
-      setHistory((prev) => [
-        {
-          id: plan.id,
-          fire_target: plan.fire_target,
-          monthly_sip_fire: plan.monthly_sip_fire,
-          years_to_retire: plan.years_to_retire,
-          created_at: plan.created_at,
-        },
-        ...prev.filter((item) => item.id !== plan.id),
-      ]);
+      setHistory((prev) =>
+        deduplicateHistory([
+          {
+            id: plan.id,
+            fire_target: plan.fire_target,
+            monthly_sip_fire: plan.monthly_sip_fire,
+            years_to_retire: plan.years_to_retire,
+            created_at: plan.created_at,
+          },
+          ...prev.filter((item) => item.id !== plan.id),
+        ])
+      );
       toast.success("FIRE plan generated");
     } catch {
       toast.error("Could not generate FIRE plan");
@@ -290,6 +329,49 @@ export default function FirePlannerPage() {
       setResult(detail);
     } catch {
       toast.error("Could not load selected FIRE plan");
+    }
+  };
+
+  const onAnalyzeLifeEvent = async () => {
+    try {
+      setLifeEventLoading(true);
+      const response = await analyzeLifeEvent({
+        event_type: lifeEventType,
+        amount: Math.max(0, Number(lifeEventAmount) || 0),
+        date: lifeEventDate,
+      });
+      setLifeEventResult(response);
+      toast.success("Life event analysis generated");
+    } catch {
+      toast.error("Could not analyze life event");
+    } finally {
+      setLifeEventLoading(false);
+    }
+  };
+
+  const onApplyLifeEvent = async () => {
+    if (!lifeEventResult) return;
+    try {
+      setLifeEventApplying(true);
+      const response = await applyLifeEvent(
+        {
+          event_type: lifeEventType,
+          amount: Math.max(0, Number(lifeEventAmount) || 0),
+          date: lifeEventDate,
+        },
+        lifeEventResult
+      );
+      setLifeEventResult(response);
+      // Reload FIRE plan to reflect changes
+      const currentPlan = await getCurrentFirePlan();
+      if (currentPlan) {
+        setResult(currentPlan);
+      }
+      toast.success("Life event applied to your profile");
+    } catch {
+      toast.error("Could not apply life event");
+    } finally {
+      setLifeEventApplying(false);
     }
   };
 
@@ -471,6 +553,47 @@ export default function FirePlannerPage() {
                 <p className="mt-1 text-xs text-warning">High return assumptions may be unrealistic</p>
               ) : null}
             </div>
+
+            <Card className="sm:col-span-2">
+              <p className="text-sm font-medium text-text">Life Event Financial Advisor</p>
+              <p className="mt-1 text-xs text-muted">
+                Simulate a real life event using your current profile, FIRE plan, goals, and investment data.
+              </p>
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted">Event Type</label>
+                  <select
+                    className="w-full rounded-2xl border border-borderSoft bg-panelAlt/80 px-4 py-3 text-sm text-text outline-none transition-all duration-300 ease-smooth focus:border-accent/60 focus:shadow-[0_0_0_4px_rgba(0,255,163,0.14)]"
+                    value={lifeEventType}
+                    onChange={(e) => setLifeEventType(e.currentTarget.value as LifeEventType)}
+                  >
+                    {LIFE_EVENT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted">Amount (INR)</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={lifeEventAmount}
+                    onChange={(e) => setLifeEventAmount(Number(e.currentTarget.value) || 0)}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted">Event Date</label>
+                  <Input type="date" value={lifeEventDate} onChange={(e) => setLifeEventDate(e.currentTarget.value)} />
+                </div>
+              </div>
+              <div className="mt-3">
+                <Button type="button" className="bg-accent text-background hover:bg-accent/90" onClick={onAnalyzeLifeEvent} isLoading={lifeEventLoading}>
+                  Analyze Life Event
+                </Button>
+              </div>
+            </Card>
             <Card className="sm:col-span-2">
               <p className="text-sm font-medium text-text">Planning Assumptions</p>
               <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-muted sm:grid-cols-3">
@@ -968,6 +1091,131 @@ export default function FirePlannerPage() {
             </Card>
           ) : null}
         </section>
+
+        {lifeEventResult ? (
+          <section className="mt-4 grid gap-4 md:grid-cols-2">
+            <Card className="md:col-span-2 border-accent/30 bg-gradient-to-br from-accent/10 to-transparent">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold">Life Event Analysis</h3>
+                  <div className="mt-2 flex items-center gap-2">
+                    {lifeEventResult.mode === "applied" ? (
+                      <span className="inline-block rounded-full bg-success/20 px-3 py-1 text-xs font-medium text-success">✓ Applied</span>
+                    ) : (
+                      <span className="inline-block rounded-full bg-warning/20 px-3 py-1 text-xs font-medium text-warning">💡 Simulation</span>
+                    )}
+                  </div>
+                </div>
+                {lifeEventResult.mode === "simulation" && (
+                  <Button
+                    className="bg-success text-background hover:bg-success/90"
+                    onClick={onApplyLifeEvent}
+                    isLoading={lifeEventApplying}
+                  >
+                    Apply to Profile
+                  </Button>
+                )}
+              </div>
+              <p className="mt-2 text-sm text-muted">{lifeEventResult.event_analysis.impact}</p>
+              <div className="mt-3 grid grid-cols-1 gap-3 text-sm text-muted sm:grid-cols-4">
+                <p>Emergency: <span className="text-text">{formatINR(lifeEventResult.event_analysis.recommended_allocation.emergency_fund)}</span></p>
+                <p>Debt: <span className="text-text">{formatINR(lifeEventResult.event_analysis.recommended_allocation.debt_repayment)}</span></p>
+                <p>Investment: <span className="text-text">{formatINR(lifeEventResult.event_analysis.recommended_allocation.investments)}</span></p>
+                <p>Discretionary: <span className="text-text">{formatINR(lifeEventResult.event_analysis.recommended_allocation.discretionary)}</span></p>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-4 text-sm md:grid-cols-3">
+                <div className="rounded-xl border border-white/10 bg-panelAlt/50 p-3">
+                  <p className="text-xs uppercase tracking-wide text-muted">Total Assets</p>
+                  <p className="mt-1 text-text">{formatINR(lifeEventResult.total_assets_before)} → {formatINR(lifeEventResult.total_assets_after)}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-panelAlt/50 p-3">
+                  <p className="text-xs uppercase tracking-wide text-muted">Outstanding Debt</p>
+                  <p className="mt-1 text-text">{formatINR(lifeEventResult.debt_before)} → {formatINR(lifeEventResult.debt_after)}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-panelAlt/50 p-3">
+                  <p className="text-xs uppercase tracking-wide text-muted">FIRE Timeline</p>
+                  <p className="mt-1 text-text">
+                    {lifeEventResult.event_analysis.fire_timeline.years_before === null || 
+                     lifeEventResult.event_analysis.fire_timeline.years_after === null
+                      ? "Unable to calculate"
+                      : (() => {
+                          const delta = (lifeEventResult.event_analysis.fire_timeline.years_before ?? 0) - 
+                                       (lifeEventResult.event_analysis.fire_timeline.years_after ?? 0);
+                          const absDelta = Math.abs(delta);
+                          
+                          if (absDelta < 1) {
+                            return "No significant impact";
+                          }
+                          
+                          const direction = delta > 0 ? " → " : " ← ";
+                          return `${lifeEventResult.event_analysis.fire_timeline.years_before} years${direction}${lifeEventResult.event_analysis.fire_timeline.years_after} years`;
+                        })()
+                    }
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 rounded-xl border border-white/10 bg-panelAlt/50 p-3 text-sm text-muted">
+                <p className="text-xs uppercase tracking-wide text-muted">Investment Allocation After Event</p>
+                <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-muted sm:grid-cols-3">
+                  <p>
+                    Equity: <span className="text-text">{formatINR(lifeEventResult.investments_before.equity)} → {formatINR(lifeEventResult.investments_after.equity)}</span>
+                  </p>
+                  <p>
+                    Debt: <span className="text-text">{formatINR(lifeEventResult.investments_before.debt)} → {formatINR(lifeEventResult.investments_after.debt)}</span>
+                  </p>
+                  <p>
+                    Gold: <span className="text-text">{formatINR(lifeEventResult.investments_before.gold)} → {formatINR(lifeEventResult.investments_after.gold)}</span>
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            <Card>
+              <div>
+                <h3 className="text-lg font-semibold text-text">Action Plan</h3>
+                <p className="mt-1 text-xs text-muted">Recommended steps to execute this financial event</p>
+              </div>
+              <ol className="mt-3 space-y-2">
+                {lifeEventResult.event_analysis.action_steps.map((step, index) => (
+                  <li key={step} className="flex gap-3">
+                    <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent/20 text-xs font-semibold text-accent">
+                      {index + 1}
+                    </span>
+                    <span className="text-sm text-text">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+
+            <Card>
+              <div>
+                <h3 className="text-lg font-semibold text-text">Advisor Insights</h3>
+                <p className="mt-1 text-xs text-muted">Detailed analysis and recommendations</p>
+              </div>
+              <div className="mt-3 space-y-3 rounded-xl border border-accent/20 bg-accent/5 p-4">
+                {lifeEventResult.event_analysis.ai_response.split('\n\n').map((section, idx) => {
+                  const lines = section.split('\n');
+                  const header = lines[0];
+                  const content = lines.slice(1);
+                  return (
+                    <div key={idx}>
+                      {header && <h4 className="font-medium text-text">{header}</h4>}
+                      <div className="mt-2 space-y-1">
+                        {content.map((line, lineIdx) => (
+                          line.trim() && (
+                            <p key={lineIdx} className="text-sm text-muted/90 leading-relaxed">
+                              {line.replace(/^[-•]\s*/, '')}
+                            </p>
+                          )
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          </section>
+        ) : null}
         </>
       ) : null}
     </main>

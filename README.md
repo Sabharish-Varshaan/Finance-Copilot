@@ -18,15 +18,59 @@ Finance Copilot is a full-stack personal finance mentor that combines planning w
 
 ## Repository Structure
 
-- backend: API routes, service/business logic, models, schemas, DB initialization
-- frontend: Next.js app routes, UI components, API service clients, auth middleware
+```text
+Finance-Copilot/
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── deps.py                # shared API dependencies
+│   │   │   ├── fire.py                # FIRE-specific helpers
+│   │   │   └── v1/routes/             # versioned route handlers
+│   │   ├── core/
+│   │   │   ├── config.py              # environment/settings
+│   │   │   └── security.py            # JWT + password security helpers
+│   │   ├── database/
+│   │   │   ├── session.py             # SQLAlchemy engine/session
+│   │   │   ├── init_db.py             # startup DB initialization
+│   │   │   └── base.py                # model imports/metadata base
+│   │   ├── models/                    # SQLAlchemy entities
+│   │   ├── schemas/                   # Pydantic request/response models
+│   │   ├── services/                  # domain business logic
+│   │   ├── modules/                   # pluggable feature modules (tax/portfolio)
+│   │   └── main.py                    # FastAPI app entrypoint
+│   ├── sql/                           # incremental SQL upgrades
+│   ├── requirements.txt
+│   └── .env.example
+├── frontend/
+│   ├── app/                           # Next.js App Router pages
+│   ├── components/                    # shared + domain UI components
+│   ├── services/                      # API client wrappers by domain
+│   ├── hooks/                         # frontend auth and utility hooks
+│   ├── lib/                           # helpers (formatting/utils)
+│   ├── types/                         # frontend shared types
+│   ├── middleware.ts                  # route protection
+│   ├── package.json
+│   └── .env.example
+└── README.md
+```
+
+## Codebase Logic at a Glance
+
+1. Frontend pages call domain API clients in `frontend/services`.
+2. Requests hit FastAPI routers under `backend/app/api/v1/routes`.
+3. Routers delegate to business services in `backend/app/services`.
+4. Services read/write PostgreSQL via SQLAlchemy models in `backend/app/models`.
+5. Responses are validated/serialized through Pydantic schemas in `backend/app/schemas`.
+6. Chat and planning flows enrich outputs using profile, goals, investments, and FIRE context.
+7. Startup lifecycle runs DB initialization and migrations so local setup stays consistent.
 
 ## Prerequisites
 
-- Python 3.10+
-- Node.js 20.x (frontend engine requires >=20 <21)
+- Python 3.10 or newer
+- Node.js 20.x (required by frontend)
+- npm (comes with Node)
 - PostgreSQL running on localhost:5432
-- A PostgreSQL database named finance_copilot
+- A PostgreSQL user with permission to create/use databases
 
 ## Dependencies
 
@@ -60,57 +104,61 @@ Finance Copilot is a full-stack personal finance mentor that combines planning w
 - tailwindcss, postcss, autoprefixer
 - react-markdown, remark-gfm, recharts, react-hot-toast, lucide-react
 
-## Installation and Run
+## Setup and Run
 
-### 1. Create Database
+### Quick Start (First-Time Setup)
 
-Run one of the following:
+Open three terminals from repository root.
+
+### Terminal 1: PostgreSQL + Database
+
+Create the database once:
 
 ```bash
 createdb finance_copilot
 ```
 
-or in psql:
+If `createdb` is unavailable, use:
 
-```sql
-CREATE DATABASE finance_copilot;
+```bash
+psql -U postgres -c "CREATE DATABASE finance_copilot;"
 ```
 
-### 2. Setup and Run Backend
+### Terminal 2: Backend (FastAPI)
 
 ```bash
 cd backend
 python3 -m venv venv
 source venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 cp .env.example .env
 python -m uvicorn app.main:app --reload
 ```
 
-Backend URLs:
+Backend will run at:
 
 - API root: http://localhost:8000
-- Swagger: http://localhost:8000/docs
+- Swagger docs: http://localhost:8000/docs
 - Health: http://localhost:8000/health
 
-Important backend environment values (backend/.env):
+Backend environment values (`backend/.env`) you should check:
 
 ```env
-APP_NAME=Finance Copilot Backend
-API_V1_PREFIX=/api/v1
-ENVIRONMENT=development
 DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/finance_copilot
 JWT_SECRET_KEY=replace-with-secure-random-string
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
 LLM_PROVIDER=mock
-# Optional when using Groq
-# GROQ_API_KEY=your_key
-# GROQ_MODEL=llama-3.3-70b-versatile
-# GROQ_FALLBACK_MODELS=llama-3.1-8b-instant
 ```
 
-### 3. Setup and Run Frontend
+Optional Groq configuration:
+
+```env
+GROQ_API_KEY=your_key
+GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_FALLBACK_MODELS=llama-3.1-8b-instant
+```
+
+### Terminal 3: Frontend (Next.js)
 
 ```bash
 cd frontend
@@ -119,14 +167,33 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Frontend URL:
+Frontend will run at:
 
 - App: http://localhost:3000
 
-Frontend environment (frontend/.env.local):
+Frontend environment (`frontend/.env.local`):
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+```
+
+### Daily Run (After Initial Setup)
+
+Use this on later days.
+
+Backend:
+
+```bash
+cd backend
+source venv/bin/activate
+python -m uvicorn app.main:app --reload
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm run dev
 ```
 
 ## Automatic Database Initialization
@@ -177,6 +244,17 @@ This keeps local setup simple and avoids manual table bootstrap scripts.
 │ investments, chats, FIRE  │      │ fallback behavior supported   │
 └───────────────────────────┘      └───────────────────────────────┘
 ```
+
+## End-to-End Runtime Flow
+
+1. User authenticates from frontend (`/login` or `/register`).
+2. Backend verifies credentials and issues JWT.
+3. Frontend stores token and sends authenticated requests.
+4. Onboarding/profile data is persisted and used across scoring, goals, FIRE, and chat.
+5. Dashboard aggregates profile health, nudges, goals, and plan signals.
+6. Chat endpoint builds a context-aware prompt from user financial data before generating response.
+7. FIRE planner computes target corpus, timelines, SIP, and scenario outcomes.
+8. All flows share one source of truth in PostgreSQL.
 
 ## Business Logic Overview
 

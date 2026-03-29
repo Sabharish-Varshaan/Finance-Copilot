@@ -37,7 +37,7 @@ export default function LoginPage() {
   return (
     <main className="page-enter mx-auto flex min-h-screen w-full max-w-md items-center px-4">
       <Card className="w-full">
-        <p className="text-xs uppercase tracking-[0.18em] text-muted">Finance Copilot</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-muted">DhanRakshak</p>
         <h1 className="mt-2 text-4xl font-semibold">Welcome Back</h1>
         <p className="mt-1 text-sm text-muted">Log in to continue your finance journey.</p>
 

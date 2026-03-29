@@ -322,6 +322,7 @@ def list_fire_plan_history(db: Session, user: User) -> list[FirePlanHistoryItem]
         db.query(FirePlan)
         .filter(FirePlan.user_id == user.id)
         .order_by(FirePlan.created_at.desc(), FirePlan.id.desc())
+        .limit(5)
         .all()
     )
 

@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.routes import auth, chat, finance, fire, goals, nudges
+from app.api.v1.routes import auth, chat, finance, fire, goals, life_events, nudges
 from app.core.config import get_settings
 from app.database.init_db import init_db
 
@@ -32,6 +32,7 @@ app.include_router(goals.router, prefix=settings.api_v1_prefix)
 app.include_router(fire.router, prefix=settings.api_v1_prefix)
 app.include_router(chat.router, prefix=settings.api_v1_prefix)
 app.include_router(nudges.router, prefix=settings.api_v1_prefix)
+app.include_router(life_events.router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health", tags=["system"])

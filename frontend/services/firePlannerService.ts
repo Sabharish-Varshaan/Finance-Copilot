@@ -137,6 +137,63 @@ export interface FirePlanRequest {
   investment_mode?: "conservative" | "balanced" | "aggressive";
 }
 
+export type LifeEventType =
+  | "bonus"
+  | "inheritance"
+  | "marriage"
+  | "child"
+  | "job_loss"
+  | "salary_increase";
+
+export interface LifeEventRequest {
+  event_type: LifeEventType;
+  amount: number;
+  date: string;
+}
+
+export interface LifeEventResponse {
+  mode: "simulation" | "applied";
+  total_assets_before: number;
+  total_assets_after: number;
+  debt_before: number;
+  debt_after: number;
+  investments_before: {
+    equity: number;
+    debt: number;
+    gold: number;
+  };
+  investments_after: {
+    equity: number;
+    debt: number;
+    gold: number;
+  };
+  event_analysis: {
+    impact: string;
+    recommended_allocation: {
+      emergency_fund: number;
+      debt_repayment: number;
+      investments: number;
+      discretionary: number;
+    };
+    updated_plan: {
+      fire_years_before: number | null;
+      fire_years_after: number | null;
+      monthly_sip_fire_before: number;
+      monthly_sip_fire_after: number;
+      goal_sip_total_before: number;
+      goal_sip_total_after: number;
+      available_surplus_before: number;
+      available_surplus_after: number;
+    };
+    action_steps: string[];
+    ai_response: string;
+    fire_timeline: {
+      years_before: number | null;
+      years_after: number | null;
+    };
+  };
+}
+
 export async function createFirePlan(payload: FirePlanRequest) {
   const response = await api.post<FirePlanRecord>("/fire-plan/create", payload);
   return response.data;
@@ -160,4 +217,17 @@ export async function getCurrentFirePlan() {
     // No current plan exists
     return null;
   }
+}
+
+export async function analyzeLifeEvent(payload: LifeEventRequest) {
+  const response = await api.post<LifeEventResponse>("/life-events/analyze", payload);
+  return response.data;
+}
+
+export async function applyLifeEvent(payload: LifeEventRequest, analysis: LifeEventResponse) {
+  const response = await api.post<LifeEventResponse>("/life-events/apply", {
+    payload,
+    analysis,
+  });
+  return response.data;
 }
