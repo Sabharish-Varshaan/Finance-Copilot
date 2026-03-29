@@ -159,6 +159,63 @@ def _fire_plan_summary(fire_plan: dict[str, Any] | None) -> str:
     )
 
 
+def _user_context_block(user_context: dict[str, Any] | None) -> str:
+    """Format full user context (profile, investments, goals, FIRE plan) for AI prompt."""
+    if not user_context:
+        return ""
+
+    lines: list[str] = []
+
+    # Profile context
+    profile = user_context.get("profile", {})
+    if profile:
+        lines.append("USER FINANCIAL CONTEXT:")
+        lines.append(f"- Age: {int(profile.get('age', 0))} years")
+        lines.append(f"- Monthly income: {_format_currency(float(profile.get('monthly_income', 0.0)))}")
+        lines.append(f"- Monthly expenses: {_format_currency(float(profile.get('monthly_expenses', 0.0)))}")
+        lines.append(f"- Monthly EMI: {_format_currency(float(profile.get('monthly_emi', 0.0)))}")
+        lines.append(f"- Current savings: {_format_currency(float(profile.get('current_savings', 0.0)))}")
+        lines.append(f"- Insurance coverage: {_format_currency(float(profile.get('insurance_coverage', 0.0)))}")
+        lines.append(f"- Outstanding loans: {_format_currency(float(profile.get('outstanding_loans', 0.0)))}")
+        lines.append(f"- Risk profile: {str(profile.get('risk_profile', 'moderate'))}")
+
+    # Investment context
+    investments = user_context.get("investments", {})
+    if investments and investments.get("total_amount", 0.0) > 0:
+        lines.append("")
+        lines.append("INVESTMENT ALLOCATION:")
+        lines.append(f"- Total investments: {_format_currency(float(investments.get('total_amount', 0.0)))}")
+        lines.append(f"  - Equity: {_format_currency(float(investments.get('equity_amount', 0.0)))} ({float(investments.get('equity_percent', 0.0)):.1f}%)")
+        lines.append(f"  - Debt: {_format_currency(float(investments.get('debt_amount', 0.0)))} ({float(investments.get('debt_percent', 0.0)):.1f}%)")
+        lines.append(f"  - Gold: {_format_currency(float(investments.get('gold_amount', 0.0)))} ({float(investments.get('gold_percent', 0.0)):.1f}%)")
+
+    # FIRE plan context
+    fire_plan = user_context.get("fire_plan", {})
+    if fire_plan and fire_plan.get("fire_target", 0.0) > 0:
+        lines.append("")
+        lines.append("FIRE PLAN STATUS:")
+        lines.append(f"- FIRE target: {_format_currency(float(fire_plan.get('fire_target', 0.0)))}")
+        lines.append(f"- Monthly FIRE SIP: {_format_currency(float(fire_plan.get('monthly_sip_fire', 0.0)))}")
+        lines.append(f"- Available monthly surplus: {_format_currency(float(fire_plan.get('available_surplus', 0.0)))}")
+        lines.append(f"- Remaining surplus (after FIRE): {_format_currency(float(fire_plan.get('remaining_surplus', 0.0)))}")
+        lines.append(f"- Investable for goals: {_format_currency(float(fire_plan.get('investable_surplus', 0.0)))}")
+        lines.append(f"- Years to retirement: {int(fire_plan.get('years_to_retire', 0))}")
+        lines.append(f"- Goals feasible: {'YES' if fire_plan.get('goals_feasible') else 'NO'}")
+
+    # Goals context
+    goals = user_context.get("goals", [])
+    if goals:
+        lines.append("")
+        lines.append("ACTIVE GOALS:")
+        for goal in goals:
+            if str(goal.get("status", "")).lower() == "active":
+                lines.append(f"- {goal.get('title', 'Goal')} ({goal.get('category', 'Other')})")
+                lines.append(f"  Target: {_format_currency(float(goal.get('target_amount', 0.0)))} | Current: {_format_currency(float(goal.get('current_amount', 0.0)))}")
+                lines.append(f"  Monthly SIP: {_format_currency(float(goal.get('monthly_sip', 0.0)))} | Target: {goal.get('target_date', 'N/A')}")
+
+    return "\n".join(lines) if lines else ""
+
+
 def build_messages(
     user_profile: Any,
     goals: Sequence[Any],
@@ -166,6 +223,7 @@ def build_messages(
     chat_history: Sequence[Any],
     financial_analysis: dict[str, Any] | None = None,
     fire_plan: dict[str, Any] | None = None,
+    user_context: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     metrics_section = _metrics_section(financial_analysis)
     flags_section = _flags_section(financial_analysis)
@@ -176,10 +234,15 @@ def build_messages(
         knowledge_block = "- No additional finance knowledge retrieved for this query."
     fire_plan_summary = _fire_plan_summary(fire_plan)
     fire_plan_block = f"FIRE PLAN:\n{fire_plan_summary}\n\n" if fire_plan_summary else ""
+    
+    # USER CONTEXT INJECTION: Build comprehensive user context block
+    user_context_block = _user_context_block(user_context) if user_context else ""
+    user_context_section = f"{user_context_block}\n\n" if user_context_block else ""
 
     system_prompt = (
         "You are an AI personal finance advisor for Indian users.\n\n"
         "You are a decision-making advisor, not a chatbot.\n\n"
+        f"{user_context_section}"
         "Financial Analysis (SYSTEM - MUST BE FOLLOWED):\n"
         f"{metrics_section}\n\n"
         "System Decisions:\n"

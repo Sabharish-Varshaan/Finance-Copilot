@@ -243,7 +243,7 @@ def _normalize_existing_goals_sip(existing_goals: list[Any]) -> float:
     return round(total, 2)
 
 
-def plan_goal(profile: dict[str, Any], goal: dict[str, Any], existing_goals: list[Any]) -> dict[str, Any]:
+def plan_goal(profile: dict[str, Any], goal: dict[str, Any], existing_goals: list[Any], fire_sip: float = 0.0) -> dict[str, Any]:
     income = _safe_float(profile.get("monthly_income"))
     expenses = _safe_float(profile.get("monthly_expenses"))
     emi = _safe_float(profile.get("monthly_emi"))
@@ -274,7 +274,9 @@ def plan_goal(profile: dict[str, Any], goal: dict[str, Any], existing_goals: lis
 
     existing_goals_sip_total = _normalize_existing_goals_sip(existing_goals)
     net_savings = income - expenses - emi
-    max_allowed = max((net_savings * 0.5) - existing_goals_sip_total, 0.0)
+    # CRITICAL FIX: Use FIRE-adjusted surplus if fire_sip provided, else fall back to 50% heuristic
+    remaining_surplus = max(net_savings - fire_sip, 0.0) if fire_sip > 0 else net_savings
+    max_allowed = max(remaining_surplus - existing_goals_sip_total, 0.0)
 
     ai_eval = _evaluate_with_ai(
         income=income,

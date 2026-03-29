@@ -8,8 +8,8 @@ import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getProfile, upsertProfile } from "@/services/profileService";
-import type { RiskProfile } from "@/types";
+import { getProfile, upsertProfile, updateInvestment } from "@/services/profileService";
+import type { RiskProfile, UserInvestmentCreate } from "@/types";
 
 type FormState = {
   age: number;
@@ -23,6 +23,13 @@ type FormState = {
   has_investments: boolean;
 };
 
+type InvestmentFormState = {
+  equity_amount: number;
+  debt_amount: number;
+  gold_amount: number;
+  total_amount: number;
+};
+
 type FieldErrors = Partial<Record<keyof Omit<FormState, "risk_profile" | "has_investments">, string>>;
 
 export default function OnboardingPage() {
@@ -30,6 +37,13 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [showInvestmentForm, setShowInvestmentForm] = useState(false);
+  const [investmentForm, setInvestmentForm] = useState<InvestmentFormState>({
+    equity_amount: 0,
+    debt_amount: 0,
+    gold_amount: 0,
+    total_amount: 0,
+  });
   const [form, setForm] = useState<FormState>({
     age: 28,
     income: 120000,
@@ -57,6 +71,17 @@ export default function OnboardingPage() {
           risk_profile: existingProfile.risk_profile,
           has_investments: existingProfile.has_investments,
         });
+        
+        // If user has existing investments, show the form
+        if (existingProfile.latest_investment) {
+          setShowInvestmentForm(true);
+          setInvestmentForm({
+            equity_amount: existingProfile.latest_investment.equity_amount,
+            debt_amount: existingProfile.latest_investment.debt_amount,
+            gold_amount: existingProfile.latest_investment.gold_amount,
+            total_amount: existingProfile.latest_investment.total_amount,
+          });
+        }
       } catch {
         // No existing profile is fine for first-time onboarding.
       } finally {
@@ -77,6 +102,20 @@ export default function OnboardingPage() {
   const setNumericField = (key: keyof Omit<FormState, "risk_profile" | "has_investments">, value: number) => {
     setForm((prev) => ({ ...prev, [key]: Number.isFinite(value) ? value : 0 }));
     setFieldErrors((prev) => ({ ...prev, [key]: "" }));
+  };
+
+  const setInvestmentField = (key: keyof InvestmentFormState, value: number) => {
+    const newForm = {
+      ...investmentForm,
+      [key]: Number.isFinite(value) ? value : 0,
+    };
+
+    // Auto-calculate total if updating breakdown
+    if (key !== "total_amount") {
+      newForm.total_amount = newForm.equity_amount + newForm.debt_amount + newForm.gold_amount;
+    }
+
+    setInvestmentForm(newForm);
   };
 
   const validateForm = (): boolean => {
@@ -122,6 +161,17 @@ export default function OnboardingPage() {
     try {
       setLoading(true);
       await upsertProfile(form);
+      
+      // Create investment record if user provided investment details
+      if (showInvestmentForm && investmentForm.total_amount > 0) {
+        try {
+          await updateInvestment(investmentForm as UserInvestmentCreate);
+        } catch (investmentError) {
+          console.warn("Failed to save investment details:", investmentError);
+          // Don't stop the flow if investment save fails
+        }
+      }
+      
       toast.success("Profile saved");
       router.push("/dashboard");
     } catch (error) {
@@ -269,13 +319,79 @@ export default function OnboardingPage() {
 
           <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-panelAlt/65 p-3 text-sm text-muted sm:col-span-2">
             <input
-              type="checkbox"
+              type="radio"
+              name="investment-option"
               className="h-4 w-4 accent-[#00ffa3]"
-              checked={form.has_investments}
-              onChange={(e) => setForm({ ...form, has_investments: e.target.checked })}
+              checked={!showInvestmentForm}
+              onChange={() => {
+                setShowInvestmentForm(false);
+                setInvestmentForm({ equity_amount: 0, debt_amount: 0, gold_amount: 0, total_amount: 0 });
+              }}
             />
-            I already have investments
+            No investments
           </label>
+
+          <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-panelAlt/65 p-3 text-sm text-muted sm:col-span-2">
+            <input
+              type="radio"
+              name="investment-option"
+              className="h-4 w-4 accent-[#00ffa3]"
+              checked={showInvestmentForm}
+              onChange={() => setShowInvestmentForm(true)}
+            />
+            Add investment details
+          </label>
+
+          {showInvestmentForm && (
+            <div className="space-y-4 rounded-2xl border border-white/10 bg-panelAlt/65 p-4 sm:col-span-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-text">Equity Amount (₹)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="1000"
+                  value={investmentForm.equity_amount}
+                  onChange={(e) => setInvestmentField("equity_amount", parseNumberInput(e.currentTarget.value))}
+                  placeholder="e.g. 300000"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-text">Debt Amount (₹)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="1000"
+                  value={investmentForm.debt_amount}
+                  onChange={(e) => setInvestmentField("debt_amount", parseNumberInput(e.currentTarget.value))}
+                  placeholder="e.g. 100000"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-text">Gold Amount (₹)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="1000"
+                  value={investmentForm.gold_amount}
+                  onChange={(e) => setInvestmentField("gold_amount", parseNumberInput(e.currentTarget.value))}
+                  placeholder="e.g. 50000"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-white/10">
+                <p className="text-sm font-semibold text-text">
+                  Total: ₹{investmentForm.total_amount.toLocaleString("en-IN")}
+                </p>
+                <p className="text-xs text-muted mt-2">
+                  Equity: {investmentForm.total_amount > 0 ? ((investmentForm.equity_amount / investmentForm.total_amount) * 100).toFixed(0) : 0}% | 
+                  Debt: {investmentForm.total_amount > 0 ? ((investmentForm.debt_amount / investmentForm.total_amount) * 100).toFixed(0) : 0}% | 
+                  Gold: {investmentForm.total_amount > 0 ? ((investmentForm.gold_amount / investmentForm.total_amount) * 100).toFixed(0) : 0}%
+                </p>
+              </div>
+            </div>
+          )}
 
           <Button type="submit" className="sm:col-span-2" isLoading={loading}>
             Save and Continue

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.goal import Goal
 from app.models.user import User
+from app.models.fire_plan import FirePlan
 from app.schemas.goal import GoalCreate, GoalUpdate
 from app.services.goals.goal_planner import get_expected_return, plan_goal
 
@@ -97,6 +98,15 @@ def create_goal(db: Session, user: User, payload: GoalCreate) -> dict[str, Any]:
         .all()
     )
 
+    # CRITICAL FIX: Fetch current FIRE plan to get fire_sip for goal feasibility
+    current_fire_plan = (
+        db.query(FirePlan)
+        .filter(FirePlan.user_id == user.id)
+        .order_by(FirePlan.created_at.desc())
+        .first()
+    )
+    fire_sip_for_goal_calc = float(current_fire_plan.monthly_sip_fire) if current_fire_plan else 0.0
+
     try:
         planned_goal = plan_goal(
             profile={
@@ -113,6 +123,7 @@ def create_goal(db: Session, user: User, payload: GoalCreate) -> dict[str, Any]:
                 "target_date": payload.target_date,
             },
             existing_goals=existing_goals,
+            fire_sip=fire_sip_for_goal_calc,
         )
     except ValueError as exc:
         raise HTTPException(

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.fire_plan import FireGoal, FirePlan
 from app.models.user import User
+from app.models.user_investment import UserInvestment
 from app.schemas.fire import FirePlanHistoryItem, FirePlanRecord, FirePlanRequest
 from app.services.finance_service import get_financial_profile
 from app.services.fire.fire_planner import generate_fire_plan
@@ -77,24 +78,57 @@ def _planner_extras(plan_payload: dict) -> dict:
         "priority_order": list(plan_payload.get("priority_order", [])),
         "priority_text": list(plan_payload.get("priority_text", [])),
         "next_steps": list(plan_payload.get("next_steps", [])),
+        "investment_plan": plan_payload.get("investment_plan"),
         "pre_conditions": plan_payload.get("pre_conditions"),
         "timeline_adjusted": bool(plan_payload.get("timeline_adjusted", False)),
         "adjusted_timeline_years": plan_payload.get("adjusted_timeline_years"),
         "new_target_date": plan_payload.get("new_target_date"),
         "minimum_sip_required": float(plan_payload.get("minimum_sip_required", 0.0)),
+        "fire_sip": float(plan_payload.get("fire_sip", plan_payload.get("monthly_sip_fire", 0.0))),
+        "goal_sip_total": float(plan_payload.get("goal_sip_total", 0.0)),
+        "available_surplus": float(plan_payload.get("available_surplus", 0.0)),
+        "remaining_surplus": float(plan_payload.get("remaining_surplus", 0.0)),
+        "investable_surplus": float(plan_payload.get("investable_surplus", 0.0)),
+        "required_goal_sip": float(plan_payload.get("required_goal_sip", 0.0)),
+        "goals_feasible": bool(plan_payload.get("goals_feasible", False)),
+        "allocation_split": plan_payload.get(
+            "allocation_split",
+            {"fire_percentage": 0.0, "goal_percentage": 0.0},
+        ),
+        "total_assets": float(plan_payload.get("total_assets", 0.0)),
+        "investment_breakdown": plan_payload.get(
+            "investment_breakdown",
+            {"equity": 0.0, "debt": 0.0, "gold": 0.0},
+        ),
     }
 
 
-def _build_enriched_payload_for_row(plan: FirePlan) -> dict:
+def _build_enriched_payload_for_row(db: Session, plan: FirePlan) -> dict:
     profile = _profile_from_fire_plan(plan)
     goals = _goals_from_fire_plan(plan)
     expected_return_input = float(plan.expected_return) if str(plan.return_source) == "user" else None
+    latest_investment = (
+        db.query(UserInvestment)
+        .filter(UserInvestment.user_id == plan.user_id)
+        .order_by(UserInvestment.created_at.desc())
+        .first()
+    )
+    investment_portfolio_current = float(latest_investment.total_amount) if latest_investment else 0.0
+    investment_breakdown = {
+        "equity": float(latest_investment.equity_amount) if latest_investment else 0.0,
+        "debt": float(latest_investment.debt_amount) if latest_investment else 0.0,
+        "gold": float(latest_investment.gold_amount) if latest_investment else 0.0,
+    }
+    total_assets = float(plan.current_savings) + investment_portfolio_current
     recalculated = generate_fire_plan(
         profile=profile,
         goals=goals,
         retirement_age=int(plan.retirement_age),
         multiplier=float(plan.multiplier),
         expected_return_input=expected_return_input,
+        investment_portfolio_current=investment_portfolio_current,
+        total_assets=total_assets,
+        investment_breakdown=investment_breakdown,
     )
     return _planner_extras(recalculated)
 
@@ -130,13 +164,40 @@ def _to_plan_response(plan: FirePlan, enriched_payload: dict | None = None) -> F
     ]
     monthly_plan = json.loads(plan.monthly_plan) if plan.monthly_plan else []
     tax_suggestions = json.loads(plan.tax_suggestions) if plan.tax_suggestions else []
+    goal_sip_total = sum(float(goal["monthly_sip"]) for goal in goal_plan)
+    available_surplus = float((enriched_payload or {}).get("available_surplus", max(float(plan.monthly_income) - float(plan.monthly_expenses) - float(plan.monthly_emi), 0.0)))
+    fire_sip = float((enriched_payload or {}).get("fire_sip", float(plan.monthly_sip_fire)))
+    remaining_surplus = float((enriched_payload or {}).get("remaining_surplus", max(available_surplus - fire_sip, 0.0)))
+    investable_surplus = float((enriched_payload or {}).get("investable_surplus", remaining_surplus))
+    required_goal_sip = float((enriched_payload or {}).get("required_goal_sip", goal_sip_total))
+    goals_feasible = bool((enriched_payload or {}).get("goals_feasible", required_goal_sip <= remaining_surplus + 0.01))
+    allocation_split = (enriched_payload or {}).get(
+        "allocation_split",
+        {
+            "fire_percentage": (fire_sip / available_surplus * 100) if available_surplus > 0 else 0.0,
+            "goal_percentage": (goal_sip_total / available_surplus * 100) if available_surplus > 0 else 0.0,
+        },
+    )
 
     return FirePlanRecord(
         id=plan.id,
         fire_target=float(plan.fire_target),
         years_to_retire=int(plan.years_to_retire),
         monthly_sip_fire=float(plan.monthly_sip_fire),
+        fire_sip=fire_sip,
+        goal_sip_total=float((enriched_payload or {}).get("goal_sip_total", goal_sip_total)),
+        available_surplus=available_surplus,
+        remaining_surplus=remaining_surplus,
+        investable_surplus=investable_surplus,
+        required_goal_sip=required_goal_sip,
+        goals_feasible=goals_feasible,
+        allocation_split=allocation_split,
         minimum_sip_required=float((enriched_payload or {}).get("minimum_sip_required", 0.0)),
+        total_assets=float((enriched_payload or {}).get("total_assets", float(plan.current_savings))),
+        investment_breakdown=(enriched_payload or {}).get(
+            "investment_breakdown",
+            {"equity": 0.0, "debt": 0.0, "gold": 0.0},
+        ),
         goal_plan=goal_plan,
         monthly_plan=monthly_plan,
         allocation={"equity": int(plan.allocation_equity), "debt": int(plan.allocation_debt)},
@@ -155,6 +216,7 @@ def _to_plan_response(plan: FirePlan, enriched_payload: dict | None = None) -> F
         priority_order=list((enriched_payload or {}).get("priority_order", [])),
         priority_text=list((enriched_payload or {}).get("priority_text", [])),
         next_steps=list((enriched_payload or {}).get("next_steps", [])),
+        investment_plan=(enriched_payload or {}).get("investment_plan"),
         pre_conditions=(enriched_payload or {}).get("pre_conditions"),
         timeline_adjusted=bool((enriched_payload or {}).get("timeline_adjusted", False)),
         adjusted_timeline_years=(enriched_payload or {}).get("adjusted_timeline_years"),
@@ -176,12 +238,31 @@ def generate_fire_plan_for_user(db: Session, user: User, payload: FirePlanReques
         goals_data = [goal.model_dump() for goal in payload.goals]
     goals_data = sorted(goals_data, key=lambda item: int(item.get("years", 0)))
 
+    # Get the latest investment
+    latest_investment = (
+        db.query(UserInvestment)
+        .filter(UserInvestment.user_id == user.id)
+        .order_by(UserInvestment.created_at.desc())
+        .first()
+    )
+    investment_portfolio_current = float(latest_investment.total_amount) if latest_investment else 0.0
+    investment_breakdown = {
+        "equity": float(latest_investment.equity_amount) if latest_investment else 0.0,
+        "debt": float(latest_investment.debt_amount) if latest_investment else 0.0,
+        "gold": float(latest_investment.gold_amount) if latest_investment else 0.0,
+    }
+    total_assets = float(profile_data.get("current_savings", 0.0)) + investment_portfolio_current
+
     fire_plan = generate_fire_plan(
         profile=profile_data,
         goals=goals_data,
         retirement_age=payload.retirement_age,
         multiplier=payload.multiplier if payload.multiplier is not None else 33,
         expected_return_input=payload.expected_return,
+        investment_mode=payload.investment_mode,
+        investment_portfolio_current=investment_portfolio_current,
+        total_assets=total_assets,
+        investment_breakdown=investment_breakdown,
     )
 
     allocation = fire_plan.get("allocation", {})
@@ -266,11 +347,11 @@ def get_current_fire_plan(db: Session, user: User) -> FirePlanRecord:
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No FIRE plans found")
-    return _to_plan_response(row, enriched_payload=_build_enriched_payload_for_row(row))
+    return _to_plan_response(row, enriched_payload=_build_enriched_payload_for_row(db, row))
 
 
 def get_fire_plan_by_id(db: Session, user: User, plan_id: int) -> FirePlanRecord:
     row = db.query(FirePlan).filter(FirePlan.id == plan_id, FirePlan.user_id == user.id).first()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="FIRE plan not found")
-    return _to_plan_response(row, enriched_payload=_build_enriched_payload_for_row(row))
+    return _to_plan_response(row, enriched_payload=_build_enriched_payload_for_row(db, row))

@@ -103,9 +103,16 @@ export default function FirePlannerPage() {
   const [multiplier, setMultiplier] = useState<number>(DEFAULT_MULTIPLIER);
   const [useDefaultReturn, setUseDefaultReturn] = useState(true);
   const [expectedReturnPct, setExpectedReturnPct] = useState<number>(10);
+  const [investmentMode, setInvestmentMode] = useState<"auto" | "conservative" | "balanced" | "aggressive">("auto");
   const [history, setHistory] = useState<FirePlanHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const currentInvestmentTotal =
+    (result?.investment_breakdown?.equity ?? 0) +
+    (result?.investment_breakdown?.debt ?? 0) +
+    (result?.investment_breakdown?.gold ?? 0);
+  const currentSavings = profile.current_savings ?? 0;
+  const totalCurrentAssets = result?.total_assets ?? currentSavings + currentInvestmentTotal;
 
   const monthYearLabel = (monthOffset: number, baseDate: Date): string => {
     const date = new Date(baseDate);
@@ -169,6 +176,11 @@ export default function FirePlannerPage() {
     if (!result) return 0;
     return result.monthly_sip_fire + totalGoalSip;
   }, [result, totalGoalSip]);
+
+  const availableSurplusFromPlan = result?.available_surplus ?? monthlySurplus;
+  const fireSipFromPlan = result?.fire_sip ?? result?.monthly_sip_fire ?? 0;
+  const goalSipFromPlan = result?.goal_sip_total ?? totalGoalSip;
+  const remainingSurplusForGoals = result?.remaining_surplus ?? Math.max(availableSurplusFromPlan - fireSipFromPlan, 0);
 
   const sipPressure = useMemo(() => {
     if (!profile.monthly_income) return 0;
@@ -251,6 +263,7 @@ export default function FirePlannerPage() {
         retirement_age: retirementAge,
         multiplier,
         expected_return: useDefaultReturn ? undefined : expectedReturnPct / 100,
+        investment_mode: investmentMode === "auto" ? undefined : investmentMode,
       });
       setResult(plan);
       setHistory((prev) => [
@@ -385,6 +398,19 @@ export default function FirePlannerPage() {
               >
                 <option value="conservative">Conservative</option>
                 <option value="moderate">Moderate</option>
+                <option value="aggressive">Aggressive</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-text">Investment Style</label>
+              <select
+                className="w-full rounded-2xl border border-borderSoft bg-panelAlt/80 px-4 py-3 text-sm text-text outline-none transition-all duration-300 ease-smooth focus:border-accent/60 focus:shadow-[0_0_0_4px_rgba(0,255,163,0.14)]"
+                value={investmentMode}
+                onChange={(e) => setInvestmentMode(e.target.value as "auto" | "conservative" | "balanced" | "aggressive")}
+              >
+                <option value="auto">Auto (Based on Risk Profile)</option>
+                <option value="conservative">Conservative</option>
+                <option value="balanced">Balanced</option>
                 <option value="aggressive">Aggressive</option>
               </select>
             </div>
@@ -596,6 +622,13 @@ export default function FirePlannerPage() {
                   </p>
                 </div>
               </div>
+              <div className="mt-4 rounded-xl border border-white/10 bg-panelAlt/50 p-3 text-sm text-muted">
+                <p className="text-xs uppercase tracking-wide text-muted">Total Current Assets</p>
+                <p className="mt-1 text-lg font-semibold text-text">{formatCurrencyWithHint(totalCurrentAssets)}</p>
+                <p className="mt-1 text-xs text-muted">
+                  Savings: {formatCurrencyCompact(currentSavings)} + Investments: {formatCurrencyCompact(currentInvestmentTotal)}
+                </p>
+              </div>
             </Card>
           </section>
 
@@ -677,7 +710,53 @@ export default function FirePlannerPage() {
                 SIP Pressure: <span className="text-text">{sipPressure.toFixed(1)}%</span> of income
               </p>
             </div>
+            <div className="mt-3 rounded-xl border border-white/10 bg-panelAlt/50 p-3 text-sm text-muted">
+              <p>
+                Your {formatCurrencyCompact(availableSurplusFromPlan)} monthly surplus is split as:
+              </p>
+              <p className="mt-1">
+                {formatCurrencyCompact(fireSipFromPlan)} {"->"} FIRE
+              </p>
+              <p>
+                {formatCurrencyCompact(goalSipFromPlan)} {"->"} Goals
+              </p>
+              <p className="mt-2 text-xs text-muted">
+                After allocating {formatCurrencyCompact(fireSipFromPlan)} to FIRE, {formatCurrencyCompact(remainingSurplusForGoals)} remains for goals.
+              </p>
+            </div>
           </Card>
+
+          {result.investment_plan ? (
+            <Card className="md:col-span-2">
+              <h3 className="text-xl font-semibold">Investment Intelligence</h3>
+              <p className="mt-2 text-sm text-muted">
+                Monthly Investment: <span className="text-text">{formatCurrency(result.investment_plan.total_investment)}</span>
+              </p>
+
+              <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-muted sm:grid-cols-3">
+                <p>Equity: <span className="text-text">{formatCurrency(result.investment_plan.allocation.equity.amount)}</span></p>
+                <p>Debt: <span className="text-text">{formatCurrency(result.investment_plan.allocation.debt.amount)}</span></p>
+                <p>Gold: <span className="text-text">{formatCurrency(result.investment_plan.allocation.gold.amount)}</span></p>
+              </div>
+
+              <div className="mt-3 rounded-xl border border-white/10 bg-panelAlt/50 p-3 text-sm text-muted">
+                <p className="font-medium text-text">Suggested Plan</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {result.investment_plan.allocation.equity.breakdown.map((item) => (
+                    <li key={`equity-${item.type}`}>{formatCurrency(item.amount)} {"→"} {item.type}</li>
+                  ))}
+                  {result.investment_plan.allocation.debt.breakdown.map((item) => (
+                    <li key={`debt-${item.type}`}>{formatCurrency(item.amount)} {"→"} {item.type}</li>
+                  ))}
+                  {result.investment_plan.allocation.gold.breakdown.map((item) => (
+                    <li key={`gold-${item.type}`}>{formatCurrency(item.amount)} {"→"} {item.type}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <p className="mt-3 text-sm text-muted">{result.investment_plan.explanation}</p>
+            </Card>
+          ) : null}
 
           {(result.risk_flags?.length ?? 0) > 0 ? (
             <Card className="md:col-span-2">
@@ -788,7 +867,7 @@ export default function FirePlannerPage() {
                         ) : null}
                       </td>
                       <td className="py-2 text-text">
-                        {goal.status === "adjusted_plan" || goal.status === "constrained"
+                        {goal.status === "adjusted" || goal.status === "adjusted_plan" || goal.status === "constrained"
                           ? "Adjusted Plan (SIP reduced + timeline extended)"
                           : goal.status === "unrealistic"
                           ? "Unrealistic"

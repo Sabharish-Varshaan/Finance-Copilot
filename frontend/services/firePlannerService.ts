@@ -49,12 +49,51 @@ export interface FirePreConditions {
   monthly_surplus: number;
 }
 
+export interface FireInvestmentBreakdownItem {
+  type: string;
+  amount: number;
+}
+
+export interface FireInvestmentAssetPlan {
+  percentage: number;
+  amount: number;
+  breakdown: FireInvestmentBreakdownItem[];
+}
+
+export interface FireInvestmentPlan {
+  total_investment: number;
+  mode: "conservative" | "balanced" | "aggressive" | string;
+  allocation: {
+    equity: FireInvestmentAssetPlan;
+    debt: FireInvestmentAssetPlan;
+    gold: FireInvestmentAssetPlan;
+  };
+  explanation: string;
+}
+
 export interface FirePlanRecord {
   id: number;
   fire_target: number;
   years_to_retire: number;
   monthly_sip_fire: number;
+  fire_sip?: number;
+  goal_sip_total?: number;
+  available_surplus?: number;
+  remaining_surplus?: number;
+  investable_surplus?: number;
+  required_goal_sip?: number;
+  goals_feasible?: boolean;
+  allocation_split?: {
+    fire_percentage: number;
+    goal_percentage: number;
+  };
   minimum_sip_required?: number;
+  total_assets?: number;
+  investment_breakdown?: {
+    equity: number;
+    debt: number;
+    gold: number;
+  };
   goal_plan: FireGoalPlan[];
   monthly_plan: { month: number; corpus: number }[];
   allocation: { equity: number; debt: number };
@@ -73,6 +112,7 @@ export interface FirePlanRecord {
   priority_order?: string[];
   priority_text?: string[];
   next_steps?: string[];
+  investment_plan?: FireInvestmentPlan | null;
   pre_conditions?: FirePreConditions | null;
   timeline_adjusted?: boolean;
   adjusted_timeline_years?: number | null;
@@ -94,6 +134,7 @@ export interface FirePlanRequest {
   retirement_age?: number;
   multiplier?: number;
   expected_return?: number;
+  investment_mode?: "conservative" | "balanced" | "aggressive";
 }
 
 export async function createFirePlan(payload: FirePlanRequest) {

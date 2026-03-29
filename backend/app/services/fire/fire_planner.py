@@ -15,6 +15,12 @@ EXPECTED_RETURN_MIN = 0.05
 EXPECTED_RETURN_MAX = 0.15
 MAX_TIMELINE_YEARS = 45
 
+INVESTMENT_ALLOCATION_BY_MODE: dict[str, dict[str, int]] = {
+    "conservative": {"equity": 40, "debt": 50, "gold": 10},
+    "balanced": {"equity": 70, "debt": 20, "gold": 10},
+    "aggressive": {"equity": 85, "debt": 10, "gold": 5},
+}
+
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
@@ -298,12 +304,86 @@ def _build_explanation(
     )
 
 
+def _resolve_investment_mode(risk_profile: str, investment_mode: str | None) -> str:
+    if investment_mode in {"conservative", "balanced", "aggressive"}:
+        return investment_mode
+
+    normalized = (risk_profile or "").strip().lower()
+    if normalized in {"low", "conservative"}:
+        return "conservative"
+    if normalized in {"high", "aggressive"}:
+        return "aggressive"
+    return "balanced"
+
+
+def _build_investment_plan(
+    investable_amount: float,
+    mode: str,
+) -> dict[str, Any]:
+    allocation = INVESTMENT_ALLOCATION_BY_MODE.get(mode, INVESTMENT_ALLOCATION_BY_MODE["balanced"])
+    investable_amount = max(investable_amount, 0.0)
+
+    equity_pct = allocation["equity"]
+    debt_pct = allocation["debt"]
+    gold_pct = allocation["gold"]
+
+    equity_amount = round(investable_amount * (equity_pct / 100), 2)
+    debt_amount = round(investable_amount * (debt_pct / 100), 2)
+    gold_amount = round(max(investable_amount - equity_amount - debt_amount, 0.0), 2)
+
+    index_fund_amount = round(equity_amount * 0.60, 2)
+    elss_flexi_amount = round(max(equity_amount - index_fund_amount, 0.0), 2)
+
+    mode_label = {
+        "conservative": "low",
+        "balanced": "moderate",
+        "aggressive": "high",
+    }.get(mode, "moderate")
+
+    return {
+        "total_investment": round(investable_amount, 2),
+        "mode": mode,
+        "allocation": {
+            "equity": {
+                "percentage": equity_pct,
+                "amount": equity_amount,
+                "breakdown": [
+                    {"type": "Index Fund", "amount": index_fund_amount},
+                    {"type": "ELSS / Flexi Cap", "amount": elss_flexi_amount},
+                ],
+            },
+            "debt": {
+                "percentage": debt_pct,
+                "amount": debt_amount,
+                "breakdown": [
+                    {"type": "PPF / Debt Fund", "amount": debt_amount},
+                ],
+            },
+            "gold": {
+                "percentage": gold_pct,
+                "amount": gold_amount,
+                "breakdown": [
+                    {"type": "Gold ETF / SGB", "amount": gold_amount},
+                ],
+            },
+        },
+        "explanation": (
+            f"Based on your {mode_label} risk profile, we recommend allocating {equity_pct}% to equity for growth, "
+            f"{debt_pct}% to debt for stability, and {gold_pct}% to gold for diversification."
+        ),
+    }
+
+
 def generate_fire_plan(
     profile: dict,
     goals: list,
     retirement_age: int = DEFAULT_RETIREMENT_AGE,
     multiplier: float = DEFAULT_MULTIPLIER,
     expected_return_input: float | None = None,
+    investment_mode: str | None = None,
+    investment_portfolio_current: float = 0.0,
+    total_assets: float | None = None,
+    investment_breakdown: dict[str, float] | None = None,
 ):
     age = max(_safe_int(profile.get("age"), 0), 0)
     monthly_income = max(_safe_float(profile.get("monthly_income"), 0.0), 0.0)
@@ -312,6 +392,17 @@ def generate_fire_plan(
     monthly_emi = max(_safe_float(profile.get("monthly_emi"), 0.0), 0.0)
     retirement_age = max(_safe_int(retirement_age, DEFAULT_RETIREMENT_AGE), age)
     multiplier = _clamp(_safe_float(multiplier, DEFAULT_MULTIPLIER), 25.0, 50.0)
+    investment_portfolio_current = max(_safe_float(investment_portfolio_current, 0.0), 0.0)
+    computed_total_assets = current_savings + investment_portfolio_current
+    total_assets = max(
+        _safe_float(total_assets, computed_total_assets),
+        computed_total_assets,
+    )
+    investment_breakdown = investment_breakdown or {
+        "equity": 0.0,
+        "debt": 0.0,
+        "gold": 0.0,
+    }
     expected_return, return_source = get_expected_return(profile, expected_return_input)
 
     annual_expense = monthly_expenses * 12
@@ -320,7 +411,19 @@ def generate_fire_plan(
     future_expenses = annual_expense * ((1 + INFLATION_RATE) ** years_to_retire)
     # Standard FIRE corpus formula: inflate annual expenses once until retirement,
     # then apply corpus multiplier. No additional compounding/buffer on corpus.
-    fire_target = future_expenses * multiplier
+    fire_target_original = future_expenses * multiplier
+
+    # Use full current assets as existing corpus seed (savings + investments).
+    fire_target = fire_target_original
+    fire_target_adjusted = max(0.0, fire_target_original - total_assets)
+    fire_gap = max(0.0, fire_target_original - total_assets)
+
+    # Future value of existing assets corpus.
+    portfolio_projected = (
+        total_assets * ((1 + expected_return) ** years_to_retire)
+        if years_to_retire > 0
+        else total_assets
+    )
 
     monthly_sip_fire_required = _monthly_sip_required(
         fire_target, years_to_retire, expected_return=expected_return
@@ -373,6 +476,7 @@ def generate_fire_plan(
                 "monthly_sip_required": monthly_sip_required,  # PHASE 2.1: Track required
                 "monthly_sip": monthly_sip_required,  # Will be adjusted if constrained
                 "years": years,
+                "ideal_years": years,
                 "status": "achievable",  # Will be updated if constrained
                 "status_description": "On track",
                 "underfunded": False,
@@ -381,45 +485,80 @@ def generate_fire_plan(
             }
         )
 
-    goal_sip_total = sum(_safe_float(goal.get("monthly_sip"), 0.0) for goal in goal_plan)
+    # Shared-surplus optimizer: FIRE + goals are allocated from the same pool.
+    available_surplus = net_savings
+    required_fire_sip = monthly_sip_fire_required
+    required_goal_sip = sum(_safe_float(goal.get("monthly_sip_required"), 0.0) for goal in goal_plan)
+    combined_required_sip = required_fire_sip + required_goal_sip
 
-    # CRITICAL FIX: Respect FIRE priority
-    # Priority order: 1. Emergency fund buffer, 2. FIRE minimum base, 3. Goals, 4. Remaining to FIRE
-    min_fire_base = max(monthly_sip_fire_required * 0.5, 2000.0)  # At least 50% of required or 2K minimum
-    available_for_goals = max(net_savings - min_fire_base, 0.0)
-    
-    # Cap goal SIP to available surplus
-    if goal_sip_total > available_for_goals:
-        goal_sip_total = available_for_goals
-        # Proportionally reduce each goal SIP and mark as constrained
-        if goal_plan:
-            original_total = sum(_safe_float(goal.get("monthly_sip"), 0.0) for goal in goal_plan)
-            if original_total > 0:
-                factor = available_for_goals / original_total
-                for goal in goal_plan:
-                    original_sip = _safe_float(goal.get("monthly_sip"), 0.0)
-                    reduced_sip = round(original_sip * factor, 2)
-                    goal["monthly_sip"] = reduced_sip
-                    # PHASE 2.1: Mark goal status as constrained if SIP was reduced
-                    if reduced_sip < original_sip:
-                        goal["status"] = "adjusted_plan"
-                        goal["status_description"] = "Adjusted Plan (SIP reduced + timeline extended)"
-
-    max_fire_sip = max(net_savings - goal_sip_total, 0.0)
-    monthly_sip_fire = monthly_sip_fire_required
+    monthly_sip_fire = required_fire_sip
+    goal_sip_total = required_goal_sip
     sip_capped = False
+
+    if combined_required_sip > available_surplus:
+        # Keep FIRE as baseline priority but allow slight shift for urgent goals.
+        urgent_goals = [goal for goal in goal_plan if _safe_int(goal.get("years"), 0) <= 5]
+        fire_baseline_ratio = 0.70 if urgent_goals else 0.80
+        fire_baseline_target = available_surplus * fire_baseline_ratio
+
+        monthly_sip_fire = min(required_fire_sip, fire_baseline_target)
+        goal_pool = max(available_surplus - monthly_sip_fire, 0.0)
+
+        if required_goal_sip > 0 and goal_plan:
+            scale = min(goal_pool / required_goal_sip, 1.0)
+            for goal in goal_plan:
+                ideal_sip = _safe_float(goal.get("monthly_sip_required"), 0.0)
+                allocated_sip = round(ideal_sip * scale, 2)
+                goal["monthly_sip"] = allocated_sip
+
+                projected_years = _years_to_target(
+                    target_amount=_safe_float(goal.get("target"), 0.0),
+                    current_savings=0.0,
+                    monthly_sip=allocated_sip,
+                    expected_return=expected_return,
+                    max_years=MAX_TIMELINE_YEARS,
+                )
+                ideal_years = _safe_int(goal.get("ideal_years"), _safe_int(goal.get("years"), 0))
+
+                if allocated_sip + 0.01 < ideal_sip:
+                    goal["status"] = "adjusted"
+                    goal["status_description"] = "Adjusted (shared surplus reallocation)"
+                    goal["timeline_adjusted"] = True
+                    goal["adjusted_years"] = projected_years
+                    goal["underfunded"] = allocated_sip < max(ideal_sip * 0.5, 1000.0)
+                else:
+                    goal["timeline_adjusted"] = False
+                    goal["adjusted_years"] = projected_years if projected_years and projected_years > ideal_years else None
+
+            goal_sip_total = round(sum(_safe_float(goal.get("monthly_sip"), 0.0) for goal in goal_plan), 2)
+        else:
+            goal_sip_total = 0.0
+
+        sip_capped = monthly_sip_fire + goal_sip_total + 0.01 < combined_required_sip
+
+    # Hard guard: never exceed available surplus.
+    if monthly_sip_fire + goal_sip_total > available_surplus:
+        overflow = (monthly_sip_fire + goal_sip_total) - available_surplus
+        monthly_sip_fire = max(monthly_sip_fire - overflow, 0.0)
+        sip_capped = True
+
+    max_fire_sip = max(available_surplus - goal_sip_total, 0.0)
 
     # CRITICAL FIX: Track required SIP even when capped (for "unrealistic" status)
     minimum_sip_required = monthly_sip_fire_required
 
-    if monthly_sip_fire_required > max_fire_sip:
+    if monthly_sip_fire > max_fire_sip:
         monthly_sip_fire = max_fire_sip
         sip_capped = True
+
+    remaining_surplus = max(available_surplus - monthly_sip_fire, 0.0)
+    investable_surplus = remaining_surplus
+    goals_feasible = required_goal_sip <= remaining_surplus + 0.01
 
     base_years = years_to_retire
     years_to_target = _years_to_target(
         target_amount=fire_target,
-        current_savings=current_savings,
+        current_savings=total_assets,
         monthly_sip=monthly_sip_fire,
         expected_return=expected_return,
     )
@@ -456,7 +595,7 @@ def generate_fire_plan(
     # CRITICAL FIX: Only generate roadmap for achievable/needs_adjustment goals
     # Do NOT generate monthly_plan for unrealistic goals (empty list instead)
     total_months = final_timeline_years * 12 if goal_status != "unrealistic" else 0
-    monthly_plan = _build_monthly_plan(current_savings, monthly_sip_fire, total_months, expected_return)
+    monthly_plan = _build_monthly_plan(total_assets, monthly_sip_fire, total_months, expected_return)
 
     # CRITICAL FIX: Only generate scenarios for achievable goals
     # When unrealistic, scenarios list is empty (user cannot act on them anyway)
@@ -471,7 +610,7 @@ def generate_fire_plan(
                 name="current_sip",
                 sip=scenario_base_sip,
                 target_amount=fire_target,
-                current_savings=current_savings,
+                current_savings=total_assets,
                 expected_return=expected_return,
                 age=age,
                 original_target_age=retirement_age,
@@ -480,7 +619,7 @@ def generate_fire_plan(
                 name="sip_plus_25",
                 sip=scenario_base_sip * 1.25,
                 target_amount=fire_target,
-                current_savings=current_savings,
+                current_savings=total_assets,
                 expected_return=expected_return,
                 age=age,
                 original_target_age=retirement_age,
@@ -489,7 +628,7 @@ def generate_fire_plan(
                 name="sip_minus_25",
                 sip=max(scenario_base_sip * 0.75, 500.0),  # Ensure minimum 500 for 75% scenario
                 target_amount=fire_target,
-                current_savings=current_savings,
+                current_savings=total_assets,
                 expected_return=expected_return,
                 age=age,
                 original_target_age=retirement_age,
@@ -511,6 +650,8 @@ def generate_fire_plan(
         "required_insurance": round(annual_income * 10, 2),
         "current_insurance": round(insurance_coverage, 2),
         "monthly_surplus": round(net_savings, 2),
+        "remaining_surplus": round(remaining_surplus, 2),
+        "investable_surplus": round(investable_surplus, 2),
     }
 
     priority_text = _build_priority_text(
@@ -531,6 +672,10 @@ def generate_fire_plan(
         monthly_sip_fire=monthly_sip_fire,
     )
 
+    investable_amount = max(monthly_sip_fire + goal_sip_total, 0.0)
+    resolved_mode = _resolve_investment_mode(str(profile.get("risk_profile", "moderate")), investment_mode)
+    investment_plan = _build_investment_plan(investable_amount=investable_amount, mode=resolved_mode)
+
     explanation = _build_explanation(
         goal_status=goal_status,
         fire_target=fire_target,
@@ -548,8 +693,29 @@ def generate_fire_plan(
     # CRITICAL FIX: Build response with validation checks
     response = {
         "fire_target": round(fire_target, 2),
+        "fire_target_adjusted": round(fire_target_adjusted, 2),
+        "fire_gap": round(fire_gap, 2),
+        "investment_portfolio_current": round(investment_portfolio_current, 2),
+        "portfolio_projected_value": round(portfolio_projected, 2),
+        "total_assets": round(total_assets, 2),
+        "investment_breakdown": {
+            "equity": round(_safe_float(investment_breakdown.get("equity"), 0.0), 2),
+            "debt": round(_safe_float(investment_breakdown.get("debt"), 0.0), 2),
+            "gold": round(_safe_float(investment_breakdown.get("gold"), 0.0), 2),
+        },
         "years_to_retire": final_timeline_years,
         "monthly_sip_fire": round(monthly_sip_fire, 2),
+        "fire_sip": round(monthly_sip_fire, 2),
+        "goal_sip_total": round(goal_sip_total, 2),
+        "available_surplus": round(available_surplus, 2),
+        "remaining_surplus": round(remaining_surplus, 2),
+        "investable_surplus": round(investable_surplus, 2),
+        "required_goal_sip": round(required_goal_sip, 2),
+        "goals_feasible": goals_feasible,
+        "allocation_split": {
+            "fire_percentage": round((monthly_sip_fire / available_surplus) * 100, 2) if available_surplus > 0 else 0.0,
+            "goal_percentage": round((goal_sip_total / available_surplus) * 100, 2) if available_surplus > 0 else 0.0,
+        },
         "minimum_sip_required": round(minimum_sip_required, 2),  # NEW: Always track required SIP
         "goal_plan": goal_plan,
         "monthly_plan": monthly_plan,  # Empty list for unrealistic goals
@@ -572,6 +738,7 @@ def generate_fire_plan(
         "priority_order": priority_order,
         "priority_text": priority_text,
         "next_steps": next_steps,
+        "investment_plan": investment_plan,
         "pre_conditions": pre_conditions,
         "timeline_adjusted": timeline_adjusted,
         "adjusted_timeline_years": final_timeline_years if timeline_adjusted else None,

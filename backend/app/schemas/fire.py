@@ -25,6 +25,7 @@ class FirePlanRequest(BaseModel):
     retirement_age: int = Field(default=55, ge=40, le=75)
     multiplier: float | None = Field(default=None, ge=25, le=50)
     expected_return: float | None = Field(default=None)
+    investment_mode: str | None = Field(default=None)
 
 
 class FireGoalPlan(BaseModel):
@@ -68,13 +69,60 @@ class FirePreConditions(BaseModel):
     required_insurance: float
     current_insurance: float
     monthly_surplus: float
+    remaining_surplus: float = 0.0
+    investable_surplus: float = 0.0
+
+
+class FireInvestmentBreakdownItem(BaseModel):
+    type: str
+    amount: float
+
+
+class FireInvestmentAssetPlan(BaseModel):
+    percentage: int
+    amount: float
+    breakdown: list[FireInvestmentBreakdownItem] = Field(default_factory=list)
+
+
+class FireInvestmentAllocation(BaseModel):
+    equity: FireInvestmentAssetPlan
+    debt: FireInvestmentAssetPlan
+    gold: FireInvestmentAssetPlan
+
+
+class FireInvestmentPlan(BaseModel):
+    total_investment: float
+    mode: str
+    allocation: FireInvestmentAllocation
+    explanation: str
+
+
+class FireInvestmentBreakdown(BaseModel):
+    equity: float = 0.0
+    debt: float = 0.0
+    gold: float = 0.0
+
+
+class FireAllocationSplit(BaseModel):
+    fire_percentage: float = 0.0
+    goal_percentage: float = 0.0
 
 
 class FirePlanResponse(BaseModel):
     fire_target: float
     years_to_retire: int
     monthly_sip_fire: float
+    fire_sip: float = 0.0
+    goal_sip_total: float = 0.0
+    available_surplus: float = 0.0
+    remaining_surplus: float = 0.0
+    investable_surplus: float = 0.0
+    required_goal_sip: float = 0.0
+    goals_feasible: bool = False
+    allocation_split: FireAllocationSplit = Field(default_factory=FireAllocationSplit)
     minimum_sip_required: float = Field(default=0.0, description="Minimum SIP needed for FIRE target")
+    total_assets: float = 0.0
+    investment_breakdown: FireInvestmentBreakdown = Field(default_factory=FireInvestmentBreakdown)
     goal_plan: list[FireGoalPlan]
     monthly_plan: list[FireMonthlyMilestone]
     allocation: FireAllocation
@@ -93,10 +141,16 @@ class FirePlanResponse(BaseModel):
     priority_order: list[str] = Field(default_factory=list)
     priority_text: list[str] = Field(default_factory=list)
     next_steps: list[str] = Field(default_factory=list)
+    investment_plan: FireInvestmentPlan | None = None
     pre_conditions: FirePreConditions | None = None
     timeline_adjusted: bool = False
     adjusted_timeline_years: int | None = None
     new_target_date: str | None = None
+    # Investment portfolio integration
+    investment_portfolio_current: float = 0.0
+    fire_target_adjusted: float = 0.0
+    fire_gap: float = 0.0
+    portfolio_projected_value: float = 0.0
 
 
 class FirePlanRecord(FirePlanResponse):

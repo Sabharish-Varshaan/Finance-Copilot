@@ -6,6 +6,22 @@ export interface User {
   created_at: string;
 }
 
+export interface UserInvestmentBreakdown {
+  equity_amount: number;
+  debt_amount: number;
+  gold_amount: number;
+}
+
+export interface UserInvestmentCreate extends UserInvestmentBreakdown {
+  total_amount: number;
+}
+
+export interface UserInvestmentRead extends UserInvestmentCreate {
+  id: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FinancialProfilePayload {
   age: number;
   income: number;
@@ -16,6 +32,14 @@ export interface FinancialProfilePayload {
   emi: number;
   risk_profile: RiskProfile;
   has_investments: boolean;
+}
+
+export interface FinancialProfile extends FinancialProfilePayload {
+  id: number;
+  user_id: number;
+  created_at: string;
+  updated_at: string;
+  latest_investment?: UserInvestmentRead | null;
 }
 
 export interface ComponentScores {

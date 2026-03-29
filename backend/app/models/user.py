@@ -20,6 +20,9 @@ class User(Base):
     financial_profile: Mapped["FinancialProfile | None"] = relationship(
         "FinancialProfile", back_populates="user", uselist=False
     )
+    investments: Mapped[list["UserInvestment"]] = relationship(
+        "UserInvestment", back_populates="user", cascade="all, delete-orphan"
+    )
     goals: Mapped[list["Goal"]] = relationship("Goal", back_populates="user", cascade="all, delete-orphan")
     messages: Mapped[list["ChatMessage"]] = relationship(
         "ChatMessage", back_populates="user", cascade="all, delete-orphan"
