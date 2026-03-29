@@ -1,4 +1,4 @@
-# Finance Copilot
+# Finance Copilot - DhanRakshak
 
 Finance Copilot is a full-stack personal finance mentor that combines planning workflows with an AI assistant.
 
